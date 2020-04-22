@@ -142,8 +142,7 @@ mod tests {
 
     assert_impl_all!(rdbmsstore; PostgresStore::<TestAggregate,TestEvent>, EventStore::<TestAggregate,TestEvent>);
 
-    #[test]
-    fn it_works() {}
+    const CONNECTION_STRING: &str = "postgresql://test_user:test_pass@localhost:5432/test";
 
     fn metadata() -> HashMap<String, String> {
         let now = Utc::now();
@@ -156,14 +155,14 @@ mod tests {
     fn test() {
         let view_events : Rc<RwLock<Vec<MessageEnvelope<TestAggregate, TestEvent>>>> = Default::default();
         let view = TestView::new(view_events);
-        let conn = Connection::connect("postgresql://test_user:test_pass@localhost:5432/test", TlsMode::None).unwrap();
+        let conn = Connection::connect(CONNECTION_STRING, TlsMode::None).unwrap();
         let ps = postgres_cqrs(conn, Rc::new(view));
     }
 
     #[test]
-    #[ignore] // integration testing
+    // #[ignore] // integration testing
     fn commit_and_load_events() {
-        let conn = Connection::connect("postgresql://user:pass@localhost:5432/test_db", TlsMode::None).unwrap();
+        let conn = Connection::connect(CONNECTION_STRING, TlsMode::None).unwrap();
         let event_store = PostgresStore::<TestAggregate, TestEvent>::new(conn);
         let id = uuid::Uuid::new_v4().to_string();
         let aggregate_type = "TestAggregate".to_string();
@@ -192,9 +191,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // integration testing
+    // #[ignore] // integration testing
     fn new_command() {
-        let conn = Connection::connect("postgresql://user:pass@localhost:5432/test_db", TlsMode::None).unwrap();
+        let conn = Connection::connect(CONNECTION_STRING, TlsMode::None).unwrap();
         let event_store = PostgresStore::<TestAggregate, TestEvent>::new(conn);
         let id = uuid::Uuid::new_v4().to_string();
         let id_str = id.to_string();

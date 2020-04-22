@@ -13,4 +13,4 @@ phases:
       - docker-compose up -d
       - docker images
       - docker image inspect postgres-es
-      - docker run postgres-es cargo build
+      - docker run postgres-es cargo test
