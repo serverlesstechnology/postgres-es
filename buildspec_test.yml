@@ -7,9 +7,9 @@ phases:
       - timeout 15 sh -c "until docker info; do echo .; sleep 1; done"
   pre_build:
     commands:
-      - docker build -t postgres .
+      - docker build -t postgres-es .
   build:
     commands:
       - docker images
-      - docker image inspect postgres
-      - docker run postgres cargo build
+      - docker image inspect postgres-es
+      - docker run postgres-es cargo build
