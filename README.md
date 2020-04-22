@@ -9,8 +9,6 @@
 
 ## Installation
 
-cqrs-es is available from Crates.io or Github.
-
 ```toml
 [dependencies]
 postgres-es = "0.0.1"
