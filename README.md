@@ -13,3 +13,6 @@
 [dependencies]
 postgres-es = "0.0.1"
 ```
+
+## Usage
+

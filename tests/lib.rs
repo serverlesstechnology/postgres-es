@@ -5,8 +5,8 @@ use cqrs_es::{Aggregate, AggregateError, Command, DomainEvent, EventStore, Messa
 use cqrs_es::view::ViewProcessor;
 use postgres::{Connection, TlsMode};
 use serde::{Deserialize, Serialize};
+
 use postgres_es::PostgresStore;
-use static_assertions::assert_impl_all;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TestAggregate {
@@ -128,29 +128,36 @@ impl ViewProcessor<TestAggregate, TestEvent> for TestView {
 
 pub type TestMessageEnvelope = MessageEnvelope<TestAggregate, TestEvent>;
 
-
-assert_impl_all!(rdbmsstore; PostgresStore::<TestAggregate,TestEvent>, EventStore::<TestAggregate,TestEvent>);
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
     use chrono::Utc;
+    use static_assertions::assert_impl_all;
 
-    use postgres_es::PostgresStore;
+    use postgres_es::{PostgresStore, PostgresCqrs, postgres_cqrs};
+    use cqrs_es::{CqrsFramework,TimeMetadataSupplier};
 
     use super::*;
 
+    assert_impl_all!(rdbmsstore; PostgresStore::<TestAggregate,TestEvent>, EventStore::<TestAggregate,TestEvent>);
+
     #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
+    fn it_works() {}
 
     fn metadata() -> HashMap<String, String> {
         let now = Utc::now();
         let mut metadata = HashMap::new();
         metadata.insert("time".to_string(), now.to_rfc3339());
         metadata
+    }
+    #[test]
+    // #[ignore] // integration testing
+    fn test() {
+        let view_events : Rc<RwLock<Vec<MessageEnvelope<TestAggregate, TestEvent>>>> = Default::default();
+        let view = TestView::new(view_events);
+        let conn = Connection::connect("postgresql://test_user:test_pass@localhost:5432/test", TlsMode::None).unwrap();
+        let ps = postgres_cqrs(conn, Rc::new(view));
     }
 
     #[test]

@@ -10,6 +10,7 @@ phases:
       - docker build -t postgres-es .
   build:
     commands:
+      - docker-compose up -d
       - docker images
       - docker image inspect postgres-es
       - docker run postgres-es cargo build
