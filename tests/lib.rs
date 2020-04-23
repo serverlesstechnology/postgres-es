@@ -133,10 +133,10 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::Utc;
+    use cqrs_es::{CqrsFramework, TimeMetadataSupplier};
     use static_assertions::assert_impl_all;
 
-    use postgres_es::{PostgresStore, PostgresCqrs, postgres_cqrs};
-    use cqrs_es::{CqrsFramework,TimeMetadataSupplier};
+    use postgres_es::{postgres_cqrs, PostgresCqrs, PostgresStore};
 
     use super::*;
 
@@ -150,10 +150,15 @@ mod tests {
         metadata.insert("time".to_string(), now.to_rfc3339());
         metadata
     }
+
+    fn test_store() -> PostgresStore<TestAggregate, TestEvent> {
+        let conn = Connection::connect(CONNECTION_STRING, TlsMode::None).unwrap();
+        PostgresStore::<TestAggregate, TestEvent>::new(conn)
+    }
+
     #[test]
-    // #[ignore] // integration testing
-    fn test() {
-        let view_events : Rc<RwLock<Vec<MessageEnvelope<TestAggregate, TestEvent>>>> = Default::default();
+    fn test_valid_cqrs_framework() {
+        let view_events: Rc<RwLock<Vec<MessageEnvelope<TestAggregate, TestEvent>>>> = Default::default();
         let view = TestView::new(view_events);
         let conn = Connection::connect(CONNECTION_STRING, TlsMode::None).unwrap();
         let ps = postgres_cqrs(conn, Rc::new(view));
@@ -162,63 +167,66 @@ mod tests {
     #[test]
     // #[ignore] // integration testing
     fn commit_and_load_events() {
-        let conn = Connection::connect(CONNECTION_STRING, TlsMode::None).unwrap();
-        let event_store = PostgresStore::<TestAggregate, TestEvent>::new(conn);
+        let event_store = test_store();
         let id = uuid::Uuid::new_v4().to_string();
-        let aggregate_type = "TestAggregate".to_string();
-
-        let events = event_store.load(&id);
-        assert_eq!(0, events.len());
+        assert_eq!(0, event_store.load(id.as_str()).len());
 
         event_store.commit(vec![
             TestMessageEnvelope::new_with_metadata(
                 id.clone(),
                 0,
-                aggregate_type.clone(),
+                TestAggregate::aggregate_type().to_string(),
                 TestEvent::Created(Created { id: "test_event_A".to_string() }),
                 metadata(),
             ),
             TestMessageEnvelope::new_with_metadata(
                 id.clone(),
                 1,
-                aggregate_type.clone(),
+                TestAggregate::aggregate_type().to_string(),
                 TestEvent::Tested(Tested { test_name: "test A".to_string() }),
                 metadata()),
         ]);
 
-        let events = event_store.load(&id);
-        assert_eq!(2, events.len());
+        assert_eq!(2, event_store.load(id.as_str()).len());
+
+        event_store.commit(vec![
+            TestMessageEnvelope::new_with_metadata(
+                id.clone(),
+                2,
+                TestAggregate::aggregate_type().to_string(),
+                TestEvent::Tested(Tested { test_name: "test B".to_string() }),
+                metadata()),
+        ]);
+        assert_eq!(3, event_store.load(id.as_str()).len());
     }
 
     #[test]
-    // #[ignore] // integration testing
-    fn new_command() {
-        let conn = Connection::connect(CONNECTION_STRING, TlsMode::None).unwrap();
-        let event_store = PostgresStore::<TestAggregate, TestEvent>::new(conn);
+    fn optimistic_lock_error() {
+        let event_store = test_store();
         let id = uuid::Uuid::new_v4().to_string();
-        let id_str = id.to_string();
-        let aggregate_type = "TestAggregate".to_string();
-
-        let events = event_store.load(&id);
-        assert_eq!(0, events.len());
+        assert_eq!(0, event_store.load(id.as_str()).len());
 
         event_store.commit(vec![
             TestMessageEnvelope::new_with_metadata(
-                id_str.clone(),
+                id.clone(),
                 0,
-                aggregate_type.clone(),
+                TestAggregate::aggregate_type().to_string(),
                 TestEvent::Created(Created { id: "test_event_A".to_string() }),
                 metadata(),
-            ),
-            TestMessageEnvelope::new_with_metadata(
-                id_str.clone(),
-                1,
-                aggregate_type.clone(),
-                TestEvent::Tested(Tested { test_name: "test A".to_string() }),
-                metadata()),
+            )
         ]);
-
-        let events = event_store.load(&id);
-        assert_eq!(2, events.len());
+        match event_store.commit(vec![
+            TestMessageEnvelope::new_with_metadata(
+                id.clone(),
+                0,
+                TestAggregate::aggregate_type().to_string(),
+                TestEvent::Tested(Tested { test_name: "test B".to_string() }),
+                metadata()),
+        ]) {
+            Ok(_) => {panic!("expected an optimistic lock error")},
+            Err(e) => {
+                assert_eq!(e, cqrs_es::AggregateError::TechnicalError("optimistic lock error".to_string()));
+            },
+        };
     }
 }

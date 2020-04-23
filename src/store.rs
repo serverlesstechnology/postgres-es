@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventStore, MessageEnvelope};
 use postgres::Connection;
+use postgres_shared::error::{Error, SqlState};
 
 /// Storage engine using an Postgres backing. This is the only persistent store currently
 /// provided.
@@ -91,6 +92,14 @@ impl<A, E> EventStore<A, E> for PostgresStore<A, E>
             match self.conn.execute(INSERT_EVENT, &[&agg_type, &id, &sequence, &payload, &metadata]) {
                 Ok(_) => {}
                 Err(err) => {
+                    match err.code() {
+                        None => {}
+                        Some(state) => {
+                            if state.code() == "23505" {
+                                return Err(AggregateError::TechnicalError("optimistic lock error".to_string()));
+                            }
+                        }
+                    }
                     panic!("unable to insert event table for aggregate id {} with error: {}\n  and payload: {}", &id, err, &payload);
                 }
             };
