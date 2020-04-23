@@ -134,6 +134,7 @@ mod tests {
 
     use chrono::Utc;
     use cqrs_es::{CqrsFramework, TimeMetadataSupplier};
+    use serde_json::{Map, Value};
     use static_assertions::assert_impl_all;
 
     use postgres_es::{postgres_cqrs, PostgresCqrs, PostgresStore};
@@ -223,10 +224,46 @@ mod tests {
                 TestEvent::Tested(Tested { test_name: "test B".to_string() }),
                 metadata()),
         ]) {
-            Ok(_) => {panic!("expected an optimistic lock error")},
+            Ok(_) => { panic!("expected an optimistic lock error") }
             Err(e) => {
                 assert_eq!(e, cqrs_es::AggregateError::TechnicalError("optimistic lock error".to_string()));
-            },
+            }
         };
+    }
+
+    #[test]
+    fn test_event_breakout_type() {
+        let event = TestEvent::Created(Created { id: "test_event_A".to_string() });
+
+        let (event_type, value) = serialize_event(&event);
+        println!("{} - {}", &event_type, &value);
+        let deser : TestEvent = deserialize_event(event_type.as_str(),value);
+        assert_eq!(deser, event);
+    }
+
+    fn serialize_event<A, E: DomainEvent<A>>(event: &E) -> (String, Value)
+        where A: Aggregate,
+              E: DomainEvent<A>
+    {
+        let val = serde_json::to_value(event).unwrap();
+        match &val {
+            Value::Object(object) => {
+                for key in object.keys() {
+                    let value = object.get(key).unwrap();
+                    return (key.to_string(), value.clone());
+                }
+                panic!("{:?} not a domain event", val);
+            }
+            _ => { panic!("{:?} not an object", val); }
+        }
+    }
+
+    fn deserialize_event<A, E: DomainEvent<A>>(event_type: &str, value: Value) -> E
+        where A: Aggregate,
+              E: DomainEvent<A> {
+        let mut new_val_map = Map::with_capacity(1);
+        new_val_map.insert(event_type.to_string(), value);
+        let new_event_val = Value::Object(new_val_map);
+        serde_json::from_value(new_event_val).unwrap()
     }
 }
