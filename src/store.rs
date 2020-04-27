@@ -2,7 +2,6 @@ use std::marker::PhantomData;
 
 use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventStore, MessageEnvelope};
 use postgres::Connection;
-use postgres_shared::error::{Error, SqlState};
 
 /// Storage engine using an Postgres backing. This is the only persistent store currently
 /// provided.

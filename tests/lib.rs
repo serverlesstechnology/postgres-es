@@ -1,8 +1,7 @@
 use std::rc::Rc;
 use std::sync::RwLock;
 
-use cqrs_es::{Aggregate, AggregateError, Command, DomainEvent, EventStore, MessageEnvelope};
-use cqrs_es::view::ViewProcessor;
+use cqrs_es::{Aggregate, AggregateError, Command, DomainEvent, EventStore, MessageEnvelope, QueryProcessor};
 use postgres::{Connection, TlsMode};
 use serde::{Deserialize, Serialize};
 
@@ -108,16 +107,16 @@ impl Command<TestAggregate, TestEvent> for DoSomethingElse {
 }
 
 
-struct TestView {
+struct TestQuery {
     events: Rc<RwLock<Vec<MessageEnvelope<TestAggregate, TestEvent>>>>
 }
 
-impl TestView {
-    fn new(events: Rc<RwLock<Vec<MessageEnvelope<TestAggregate, TestEvent>>>>) -> Self { TestView { events } }
+impl TestQuery {
+    fn new(events: Rc<RwLock<Vec<MessageEnvelope<TestAggregate, TestEvent>>>>) -> Self { TestQuery { events } }
 }
 
 
-impl ViewProcessor<TestAggregate, TestEvent> for TestView {
+impl QueryProcessor<TestAggregate, TestEvent> for TestQuery {
     fn dispatch(&self, _aggregate_id: &str, events: Vec<MessageEnvelope<TestAggregate, TestEvent>>) {
         for event in events {
             let mut event_list = self.events.write().unwrap();
@@ -160,9 +159,9 @@ mod tests {
     #[test]
     fn test_valid_cqrs_framework() {
         let view_events: Rc<RwLock<Vec<MessageEnvelope<TestAggregate, TestEvent>>>> = Default::default();
-        let view = TestView::new(view_events);
+        let query = TestQuery::new(view_events);
         let conn = Connection::connect(CONNECTION_STRING, TlsMode::None).unwrap();
-        let ps = postgres_cqrs(conn, Rc::new(view));
+        let ps = postgres_cqrs(conn, Rc::new(query));
     }
 
     #[test]
