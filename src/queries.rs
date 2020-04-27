@@ -5,35 +5,33 @@ use postgres::Connection;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use cqrs_es::view::View;
-use cqrs_es::{DomainEvent, Aggregate, AggregateError, MessageEnvelope};
+use cqrs_es::{DomainEvent, Aggregate, AggregateError, MessageEnvelope, Query};
 
-// TODO use of both 'view' and 'query' is confusing
-/// This provides a simple query/view repository that can be used both to return deserialized
+/// This provides a simple query repository that can be used both to return deserialized
 /// views and to act as a query processor.
-pub struct GenericViewRepository<V, A, E>
-    where V: View<A, E>,
+pub struct GenericQueryRepository<V, A, E>
+    where V: Query<A, E>,
           E: DomainEvent<A>,
           A: Aggregate
 {
-    view_name: String,
+    query_name: String,
     error_handler: Option<Box<ErrorHandler>>,
     _phantom: PhantomData<(V, A, E)>,
 }
 
 type ErrorHandler = dyn Fn(AggregateError);
 
-impl<V, A, E> GenericViewRepository<V, A, E>
-    where V: View<A, E>,
+impl<V, A, E> GenericQueryRepository<V, A, E>
+    where V: Query<A, E>,
           E: DomainEvent<A>,
           A: Aggregate
 {
-    /// Creates a new `GenericViewRepository` that will store its' views in the table named
-    /// identically to the `view_name` value provided. This table should be created by the user
+    /// Creates a new `GenericQueryRepository` that will store its' views in the table named
+    /// identically to the `query_name` value provided. This table should be created by the user
     /// previously (see `/db/init.sql`).
     #[must_use]
-    pub fn new(view_name: String) -> Self {
-        GenericViewRepository { view_name, error_handler: None, _phantom: PhantomData }
+    pub fn new(query_name: String) -> Self {
+        GenericQueryRepository { query_name, error_handler: None, _phantom: PhantomData }
     }
     /// Since inbound views cannot
     pub fn with_error_handler(&mut self, error_handler: Box<ErrorHandler>) {
@@ -43,12 +41,12 @@ impl<V, A, E> GenericViewRepository<V, A, E>
     /// Returns the originally configured view name.
     #[must_use]
     pub fn view_name(&self) -> String {
-        self.view_name.to_string()
+        self.query_name.to_string()
     }
 
 
-    fn load_mut(&self, conn: &Connection, aggregate_id: String) -> Result<(V, ViewContext<V>), AggregateError> {
-        let query = format!("SELECT version,payload FROM {} WHERE aggregate_id= $1", &self.view_name);
+    fn load_mut(&self, conn: &Connection, aggregate_id: String) -> Result<(V, QueryContext<V>), AggregateError> {
+        let query = format!("SELECT version,payload FROM {} WHERE aggregate_id= $1", &self.query_name);
         let result = match conn.query(query.as_str(), &[&aggregate_id]) {
             Ok(result) => { result }
             Err(e) => {
@@ -57,22 +55,22 @@ impl<V, A, E> GenericViewRepository<V, A, E>
         };
         match result.iter().next() {
             Some(row) => {
-                let view_name = self.view_name.clone();
+                let view_name = self.query_name.clone();
                 let version = row.get("version");
                 let payload = row.get("payload");
                 let view = serde_json::from_value(payload)?;
-                let view_context = ViewContext {
-                    view_name,
-                    aggregate_id,
+                let view_context = QueryContext {
+                    query_name: view_name,
+                    query_instance_id: aggregate_id,
                     version,
                     _phantom: PhantomData,
                 };
                 Ok((view, view_context))
             }
             None => {
-                let view_context = ViewContext {
-                    view_name: self.view_name.clone(),
-                    aggregate_id,
+                let view_context = QueryContext {
+                    query_name: self.query_name.clone(),
+                    query_instance_id: aggregate_id,
                     version: 0,
                     _phantom: PhantomData,
                 };
@@ -102,14 +100,13 @@ impl<V, A, E> GenericViewRepository<V, A, E>
         };
     }
 
-    // TODO correct database field to also use 'view_id' instead of 'aggregate_id'
     /// Loads and deserializes a view based on the view id.
-    pub fn load(&self, conn: &Connection, view_id: String) -> Option<V> {
-        let query = format!("SELECT version,payload FROM {} WHERE aggregate_id= $1", &self.view_name);
-        let result = match conn.query(query.as_str(), &[&view_id]) {
+    pub fn load(&self, conn: &Connection, query_instance_id: String) -> Option<V> {
+        let query = format!("SELECT version,payload FROM {} WHERE query_instance_id= $1", &self.query_name);
+        let result = match conn.query(query.as_str(), &[&query_instance_id]) {
             Ok(result) => { result }
             Err(err) => {
-                panic!("unable to load view '{}' with id: '{}', encountered: {}", &view_id, &self.view_name, err);
+                panic!("unable to load view '{}' with id: '{}', encountered: {}", &query_instance_id, &self.query_name, err);
             }
         };
         match result.iter().next() {
@@ -133,35 +130,35 @@ impl<V, A, E> GenericViewRepository<V, A, E>
     }
 }
 
-struct ViewContext<V>
+struct QueryContext<V>
     where V: Debug + Default + Serialize + DeserializeOwned + Default
 {
-    view_name: String,
-    aggregate_id: String,
+    query_name: String,
+    query_instance_id: String,
     version: i64,
     _phantom: PhantomData<V>,
 }
 
-impl<V> ViewContext<V>
+impl<V> QueryContext<V>
     where V: Debug + Default + Serialize + DeserializeOwned + Default
 {
     fn commit(&self, conn: &Connection, view: V) {
         let sql = match self.version {
-            0 => format!("INSERT INTO {} (payload, version, aggregate_id) VALUES ( $1, $2, $3 )", &self.view_name),
-            _ => format!("UPDATE {} SET payload= $1 , version= $2 WHERE aggregate_id= $3", &self.view_name),
+            0 => format!("INSERT INTO {} (payload, version, query_instance_id) VALUES ( $1, $2, $3 )", &self.query_name),
+            _ => format!("UPDATE {} SET payload= $1 , version= $2 WHERE query_instance_id= $3", &self.query_name),
         };
         let version = self.version + 1;
-        let view_id = &self.aggregate_id;
+        // let query_instance_id = &self.query_instance_id;
         let payload = match serde_json::to_value(&view) {
             Ok(payload) => { payload }
             Err(err) => {
-                panic!("unable to covert view '{}' with id: '{}', to value: {}\n  view: {:?}", &view_id, &self.view_name, err, &view);
+                panic!("unable to covert view '{}' with id: '{}', to value: {}\n  view: {:?}", &self.query_instance_id, &self.query_name, err, &view);
             }
         };
-        match conn.execute(sql.as_str(), &[&payload, &version, view_id]) {
+        match conn.execute(sql.as_str(), &[&payload, &version, &self.query_instance_id]) {
             Ok(_) => {}
             Err(err) => {
-                panic!("unable to update view '{}' with id: '{}', encountered: {}", &view_id, &self.view_name, err);
+                panic!("unable to update view '{}' with id: '{}', encountered: {}", &self.query_instance_id, &self.query_name, err);
             }
         };
     }
