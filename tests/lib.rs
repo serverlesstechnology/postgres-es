@@ -5,8 +5,6 @@ use cqrs_es::{Aggregate, AggregateError, Command, DomainEvent, EventStore, Messa
 use postgres::{Connection, TlsMode};
 use serde::{Deserialize, Serialize};
 
-use postgres_es::PostgresStore;
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TestAggregate {
     id: String,
@@ -117,10 +115,10 @@ impl TestQuery {
 
 
 impl QueryProcessor<TestAggregate, TestEvent> for TestQuery {
-    fn dispatch(&self, _aggregate_id: &str, events: Vec<MessageEnvelope<TestAggregate, TestEvent>>) {
+    fn dispatch(&self, _aggregate_id: &str, events: &[MessageEnvelope<TestAggregate, TestEvent>]) {
         for event in events {
             let mut event_list = self.events.write().unwrap();
-            event_list.push(event);
+            event_list.push(event.clone());
         }
     }
 }
@@ -132,11 +130,10 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::Utc;
-    use cqrs_es::{CqrsFramework, TimeMetadataSupplier};
     use serde_json::{Map, Value};
     use static_assertions::assert_impl_all;
 
-    use postgres_es::{postgres_cqrs, PostgresCqrs, PostgresStore};
+    use postgres_es::{postgres_cqrs, PostgresStore};
 
     use super::*;
 
@@ -161,7 +158,7 @@ mod tests {
         let view_events: Rc<RwLock<Vec<MessageEnvelope<TestAggregate, TestEvent>>>> = Default::default();
         let query = TestQuery::new(view_events);
         let conn = Connection::connect(CONNECTION_STRING, TlsMode::None).unwrap();
-        let ps = postgres_cqrs(conn, Rc::new(query));
+        let _ps = postgres_cqrs(conn, vec![Box::new(query)]);
     }
 
     #[test]
@@ -236,7 +233,7 @@ mod tests {
 
         let (event_type, value) = serialize_event(&event);
         println!("{} - {}", &event_type, &value);
-        let deser : TestEvent = deserialize_event(event_type.as_str(),value);
+        let deser: TestEvent = deserialize_event(event_type.as_str(), value);
         assert_eq!(deser, event);
     }
 

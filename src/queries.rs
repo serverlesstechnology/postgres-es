@@ -1,11 +1,10 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
+use cqrs_es::{Aggregate, AggregateError, DomainEvent, MessageEnvelope, Query, QueryProcessor};
 use postgres::Connection;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-
-use cqrs_es::{DomainEvent, Aggregate, AggregateError, MessageEnvelope, Query};
 
 /// This provides a simple query repository that can be used both to return deserialized
 /// views and to act as a query processor.
@@ -14,6 +13,7 @@ pub struct GenericQueryRepository<V, A, E>
           E: DomainEvent<A>,
           A: Aggregate
 {
+    conn: Connection,
     query_name: String,
     error_handler: Option<Box<ErrorHandler>>,
     _phantom: PhantomData<(V, A, E)>,
@@ -30,8 +30,13 @@ impl<V, A, E> GenericQueryRepository<V, A, E>
     /// identically to the `query_name` value provided. This table should be created by the user
     /// previously (see `/db/init.sql`).
     #[must_use]
-    pub fn new(query_name: String) -> Self {
-        GenericQueryRepository { query_name, error_handler: None, _phantom: PhantomData }
+    pub fn new(query_name: &str, conn: Connection) -> Self {
+        GenericQueryRepository {
+            conn,
+            query_name: query_name.to_string(),
+            error_handler: None,
+            _phantom: PhantomData,
+        }
     }
     /// Since inbound views cannot
     pub fn with_error_handler(&mut self, error_handler: Box<ErrorHandler>) {
@@ -45,9 +50,9 @@ impl<V, A, E> GenericQueryRepository<V, A, E>
     }
 
 
-    fn load_mut(&self, conn: &Connection, aggregate_id: String) -> Result<(V, QueryContext<V>), AggregateError> {
-        let query = format!("SELECT version,payload FROM {} WHERE aggregate_id= $1", &self.query_name);
-        let result = match conn.query(query.as_str(), &[&aggregate_id]) {
+    fn load_mut(&self, conn: &Connection, query_instance_id: String) -> Result<(V, QueryContext<V>), AggregateError> {
+        let query = format!("SELECT version,payload FROM {} WHERE query_instance_id= $1", &self.query_name);
+        let result = match conn.query(query.as_str(), &[&query_instance_id]) {
             Ok(result) => { result }
             Err(e) => {
                 return Err(AggregateError::new(e.to_string().as_str()));
@@ -61,7 +66,7 @@ impl<V, A, E> GenericQueryRepository<V, A, E>
                 let view = serde_json::from_value(payload)?;
                 let view_context = QueryContext {
                     query_name: view_name,
-                    query_instance_id: aggregate_id,
+                    query_instance_id,
                     version,
                     _phantom: PhantomData,
                 };
@@ -70,7 +75,7 @@ impl<V, A, E> GenericQueryRepository<V, A, E>
             None => {
                 let view_context = QueryContext {
                     query_name: self.query_name.clone(),
-                    query_instance_id: aggregate_id,
+                    query_instance_id,
                     version: 0,
                     _phantom: PhantomData,
                 };
@@ -80,9 +85,9 @@ impl<V, A, E> GenericQueryRepository<V, A, E>
     }
 
     /// Used to apply committed events to a view.
-    pub fn apply_events(&self, conn: &Connection, aggregate_id: &str, events: &[MessageEnvelope<A, E>])
+    pub fn apply_events(&self, conn: &Connection, query_instance_id: &str, events: &[MessageEnvelope<A, E>])
     {
-        match self.load_mut(conn, aggregate_id.to_string()) {
+        match self.load_mut(conn, query_instance_id.to_string()) {
             Ok((mut view, view_context)) => {
                 for event in events {
                     view.update(event);
@@ -127,6 +132,16 @@ impl<V, A, E> GenericQueryRepository<V, A, E>
             }
             None => None,
         }
+    }
+}
+
+impl<Q, A, E> QueryProcessor<A, E> for GenericQueryRepository<Q, A, E>
+    where Q: Query<A, E>,
+          E: DomainEvent<A>,
+          A: Aggregate
+{
+    fn dispatch(&self, query_instance_id: &str, events: &[MessageEnvelope<A, E>]) {
+        self.apply_events(&self.conn, &query_instance_id.to_string(), &events);
     }
 }
 
