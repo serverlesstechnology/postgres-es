@@ -11,7 +11,7 @@
 
 ```toml
 [dependencies]
-postgres-es = "0.0.2"
+postgres-es = "0.0.3"
 ```
 
 ## Usage
