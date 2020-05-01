@@ -50,9 +50,9 @@ impl<V, A, E> GenericQueryRepository<V, A, E>
     }
 
 
-    fn load_mut(&self, conn: &Connection, query_instance_id: String) -> Result<(V, QueryContext<V>), AggregateError> {
+    fn load_mut(&self, query_instance_id: String) -> Result<(V, QueryContext<V>), AggregateError> {
         let query = format!("SELECT version,payload FROM {} WHERE query_instance_id= $1", &self.query_name);
-        let result = match conn.query(query.as_str(), &[&query_instance_id]) {
+        let result = match self.conn.query(query.as_str(), &[&query_instance_id]) {
             Ok(result) => { result }
             Err(e) => {
                 return Err(AggregateError::new(e.to_string().as_str()));
@@ -85,14 +85,14 @@ impl<V, A, E> GenericQueryRepository<V, A, E>
     }
 
     /// Used to apply committed events to a view.
-    pub fn apply_events(&self, conn: &Connection, query_instance_id: &str, events: &[MessageEnvelope<A, E>])
+    pub fn apply_events(&self, query_instance_id: &str, events: &[MessageEnvelope<A, E>])
     {
-        match self.load_mut(conn, query_instance_id.to_string()) {
+        match self.load_mut(query_instance_id.to_string()) {
             Ok((mut view, view_context)) => {
                 for event in events {
                     view.update(event);
                 }
-                view_context.commit(conn, view);
+                view_context.commit(&self.conn, view);
             }
             Err(e) => {
                 match &self.error_handler {
@@ -106,9 +106,9 @@ impl<V, A, E> GenericQueryRepository<V, A, E>
     }
 
     /// Loads and deserializes a view based on the view id.
-    pub fn load(&self, conn: &Connection, query_instance_id: String) -> Option<V> {
+    pub fn load(&self, query_instance_id: String) -> Option<V> {
         let query = format!("SELECT version,payload FROM {} WHERE query_instance_id= $1", &self.query_name);
-        let result = match conn.query(query.as_str(), &[&query_instance_id]) {
+        let result = match self.conn.query(query.as_str(), &[&query_instance_id]) {
             Ok(result) => { result }
             Err(err) => {
                 panic!("unable to load view '{}' with id: '{}', encountered: {}", &query_instance_id, &self.query_name, err);
@@ -141,7 +141,7 @@ impl<Q, A, E> QueryProcessor<A, E> for GenericQueryRepository<Q, A, E>
           A: Aggregate
 {
     fn dispatch(&self, query_instance_id: &str, events: &[MessageEnvelope<A, E>]) {
-        self.apply_events(&self.conn, &query_instance_id.to_string(), &events);
+        self.apply_events(&query_instance_id.to_string(), &events);
     }
 }
 
