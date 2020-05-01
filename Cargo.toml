@@ -1,6 +1,6 @@
 [package]
 name = "postgres-es"
-version = "0.0.14.1"
+version = "0.0.15"
 authors = ["Dave Garred <dave.garred@serverlesstechnology.com>"]
 edition = "2018"
 license-file = "LICENSE"
@@ -10,7 +10,7 @@ repository = "https://github.com/serverlesstechnology/postgres-es"
 readme = "README.md"
 
 [dependencies]
-cqrs-es = "0.0.14"
+cqrs-es = "0.0.15"
 
 postgres = {version = "0.15.2", features = ["with-serde_json"]}
 postgres-shared = "0.4.2"
