@@ -11,10 +11,21 @@
 
 ```toml
 [dependencies]
-postgres-es = "0.0.16"
+postgres-es = "0.0.17"
 ```
 
 ## Usage
 
+```
+use postgres::{Connection, TlsMode};
+use postgres_es::PostgresCqrs;
+
+let connection = Connection::connect("postgresql://demo_user:demo_pass@localhost:5432/demo", TlsMode::None).unwrap();
+let cqrs = postgres_es::postgres_cqrs(connection, vec![Box::new(my_query)])
+```
+
 ## TODOs
 - Some additional framework around `GenericQueryRepository` to simplify event replay.
+
+## Demo
+A demo application [is available here](https://github.com/serverlesstechnology/cqrs-demo).
