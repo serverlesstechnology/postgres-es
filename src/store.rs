@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventStore, MessageEnvelope};
+use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventStore, EventEnvelope};
 use postgres::Connection;
 
 /// Storage engine using an Postgres backing. This is the only persistent store currently
@@ -39,7 +39,7 @@ impl<A, E> EventStore<A, E> for PostgresStore<A, E>
         A: Aggregate,
         E: DomainEvent<A>
 {
-    fn load(&self, aggregate_id: &str) -> Vec<MessageEnvelope<A, E>> {
+    fn load(&self, aggregate_id: &str) -> Vec<EventEnvelope<A, E>> {
         let agg_type = A::aggregate_type();
         let id = aggregate_id.to_string();
         let mut result = Vec::new();
@@ -56,7 +56,7 @@ impl<A, E> EventStore<A, E> for PostgresStore<A, E>
                             panic!("bad payload found in events table for aggregate id {} with error: {}", &id, err);
                         }
                     };
-                    let event = MessageEnvelope::new(aggregate_id, sequence, aggregate_type, payload);
+                    let event = EventEnvelope::new(aggregate_id, sequence, aggregate_type, payload);
                     result.push(event);
                 }
             }
@@ -65,7 +65,7 @@ impl<A, E> EventStore<A, E> for PostgresStore<A, E>
         result
     }
 
-    fn commit(&self, events: Vec<MessageEnvelope<A, E>>) -> Result<(), AggregateError> {
+    fn commit(&self, events: Vec<EventEnvelope<A, E>>) -> Result<(), AggregateError> {
         let trans = match self.conn.transaction() {
             Ok(t) => { t }
             Err(err) => {

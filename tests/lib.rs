@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::sync::RwLock;
 
-use cqrs_es::{Aggregate, AggregateError, Command, DomainEvent, EventStore, MessageEnvelope, QueryProcessor};
+use cqrs_es::{Aggregate, AggregateError, Command, DomainEvent, EventStore, EventEnvelope, QueryProcessor};
 use postgres::{Connection, TlsMode};
 use serde::{Deserialize, Serialize};
 
@@ -106,16 +106,16 @@ impl Command<TestAggregate, TestEvent> for DoSomethingElse {
 
 
 struct TestQuery {
-    events: Rc<RwLock<Vec<MessageEnvelope<TestAggregate, TestEvent>>>>
+    events: Rc<RwLock<Vec<EventEnvelope<TestAggregate, TestEvent>>>>
 }
 
 impl TestQuery {
-    fn new(events: Rc<RwLock<Vec<MessageEnvelope<TestAggregate, TestEvent>>>>) -> Self { TestQuery { events } }
+    fn new(events: Rc<RwLock<Vec<EventEnvelope<TestAggregate, TestEvent>>>>) -> Self { TestQuery { events } }
 }
 
 
 impl QueryProcessor<TestAggregate, TestEvent> for TestQuery {
-    fn dispatch(&self, _aggregate_id: &str, events: &[MessageEnvelope<TestAggregate, TestEvent>]) {
+    fn dispatch(&self, _aggregate_id: &str, events: &[EventEnvelope<TestAggregate, TestEvent>]) {
         for event in events {
             let mut event_list = self.events.write().unwrap();
             event_list.push(event.clone());
@@ -123,7 +123,7 @@ impl QueryProcessor<TestAggregate, TestEvent> for TestQuery {
     }
 }
 
-pub type TestMessageEnvelope = MessageEnvelope<TestAggregate, TestEvent>;
+pub type TestEventEnvelope = EventEnvelope<TestAggregate, TestEvent>;
 
 #[cfg(test)]
 mod tests {
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_valid_cqrs_framework() {
-        let view_events: Rc<RwLock<Vec<MessageEnvelope<TestAggregate, TestEvent>>>> = Default::default();
+        let view_events: Rc<RwLock<Vec<EventEnvelope<TestAggregate, TestEvent>>>> = Default::default();
         let query = TestQuery::new(view_events);
         let conn = Connection::connect(CONNECTION_STRING, TlsMode::None).unwrap();
         let _ps = postgres_cqrs(conn, vec![Box::new(query)]);
@@ -169,14 +169,14 @@ mod tests {
         assert_eq!(0, event_store.load(id.as_str()).len());
 
         event_store.commit(vec![
-            TestMessageEnvelope::new_with_metadata(
+            TestEventEnvelope::new_with_metadata(
                 id.clone(),
                 0,
                 TestAggregate::aggregate_type().to_string(),
                 TestEvent::Created(Created { id: "test_event_A".to_string() }),
                 metadata(),
             ),
-            TestMessageEnvelope::new_with_metadata(
+            TestEventEnvelope::new_with_metadata(
                 id.clone(),
                 1,
                 TestAggregate::aggregate_type().to_string(),
@@ -187,7 +187,7 @@ mod tests {
         assert_eq!(2, event_store.load(id.as_str()).len());
 
         event_store.commit(vec![
-            TestMessageEnvelope::new_with_metadata(
+            TestEventEnvelope::new_with_metadata(
                 id.clone(),
                 2,
                 TestAggregate::aggregate_type().to_string(),
@@ -204,7 +204,7 @@ mod tests {
         assert_eq!(0, event_store.load(id.as_str()).len());
 
         event_store.commit(vec![
-            TestMessageEnvelope::new_with_metadata(
+            TestEventEnvelope::new_with_metadata(
                 id.clone(),
                 0,
                 TestAggregate::aggregate_type().to_string(),
@@ -213,7 +213,7 @@ mod tests {
             )
         ]);
         match event_store.commit(vec![
-            TestMessageEnvelope::new_with_metadata(
+            TestEventEnvelope::new_with_metadata(
                 id.clone(),
                 0,
                 TestAggregate::aggregate_type().to_string(),

@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-use cqrs_es::{Aggregate, AggregateError, DomainEvent, MessageEnvelope, Query, QueryProcessor};
+use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, Query, QueryProcessor};
 use postgres::Connection;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -85,7 +85,7 @@ impl<V, A, E> GenericQueryRepository<V, A, E>
     }
 
     /// Used to apply committed events to a view.
-    pub fn apply_events(&self, query_instance_id: &str, events: &[MessageEnvelope<A, E>])
+    pub fn apply_events(&self, query_instance_id: &str, events: &[EventEnvelope<A, E>])
     {
         match self.load_mut(query_instance_id.to_string()) {
             Ok((mut view, view_context)) => {
@@ -140,7 +140,7 @@ impl<Q, A, E> QueryProcessor<A, E> for GenericQueryRepository<Q, A, E>
           E: DomainEvent<A>,
           A: Aggregate
 {
-    fn dispatch(&self, query_instance_id: &str, events: &[MessageEnvelope<A, E>]) {
+    fn dispatch(&self, query_instance_id: &str, events: &[EventEnvelope<A, E>]) {
         self.apply_events(&query_instance_id.to_string(), &events);
     }
 }
