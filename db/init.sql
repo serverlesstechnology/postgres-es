@@ -10,6 +10,17 @@ CREATE TABLE events
     PRIMARY KEY (aggregate_type, aggregate_id, sequence)
 );
 
+-- this table is only needed if snapshotting is employed
+CREATE TABLE snapshots
+(
+    aggregate_type text                              NOT NULL,
+    aggregate_id   text                              NOT NULL,
+    last_sequence  bigint CHECK (last_sequence >= 0) NOT NULL,
+    payload        jsonb                             NOT NULL,
+    timestamp      timestamp with time zone DEFAULT (CURRENT_TIMESTAMP),
+    PRIMARY KEY (aggregate_type, aggregate_id, last_sequence)
+);
+
 -- one view table should be created for every `GenericQueryRepository` used
 -- replace name with the value used in `GenericQueryRepository::new(query_name: String)`
 CREATE TABLE test_query
