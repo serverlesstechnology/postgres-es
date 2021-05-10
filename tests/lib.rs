@@ -13,7 +13,7 @@ pub struct TestAggregate {
 }
 
 impl Aggregate for TestAggregate {
-    type Command = TestCommand ;
+    type Command = TestCommand;
     type Event = TestEvent;
 
     fn aggregate_type() -> &'static str { "TestAggregate" }
@@ -82,30 +82,12 @@ pub struct Tested {
     pub test_name: String
 }
 
-// impl DomainEvent<TestAggregate> for Tested {
-//     fn apply(self, aggregate: &mut TestAggregate) {
-//         aggregate.tests.push(self.test_name);
-//     }
-// }
-
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct SomethingElse {
     pub description: String
 }
 
-impl DomainEvent for TestEvent {
-    // fn apply(self, aggregate: &mut TestAggregate) {
-    //     match self {
-    //         TestEvent::Created(e) => {
-    //             aggregate.id = e.id;
-    //         }
-    //         TestEvent::Tested(e) => { e.apply(aggregate) }
-    //         TestEvent::SomethingElse(e) => {
-    //             aggregate.description = e.description;
-    //         }
-    //     }
-    // }
-}
+impl DomainEvent for TestEvent {}
 
 pub enum TestCommand {
     CreateTest(CreateTest),
@@ -117,40 +99,13 @@ pub struct CreateTest {
     pub id: String,
 }
 
-// impl Command<TestAggregate, TestEvent> for CreateTest {
-//     fn handle(self, _aggregate: &TestAggregate) -> Result<Vec<TestEvent>, AggregateError> {
-//         let event = TestEvent::Created(Created { id: self.id.to_string() });
-//         Ok(vec![event])
-//     }
-// }
-
 pub struct ConfirmTest {
     pub test_name: String,
 }
 
-// impl<'a> Command<TestAggregate, TestEvent> for ConfirmTest<'a> {
-//     fn handle(self, aggregate: &TestAggregate) -> Result<Vec<TestEvent>, AggregateError> {
-//         for test in &aggregate.tests {
-//             if test == &self.test_name {
-//                 return Err(AggregateError::new("test already performed"));
-//             }
-//         }
-//         let event = TestEvent::Tested(Tested { test_name: self.test_name.to_string() });
-//         Ok(vec![event])
-//     }
-// }
-
 pub struct DoSomethingElse {
     pub description: String,
 }
-
-// impl Command<TestAggregate, TestEvent> for DoSomethingElse {
-//     fn handle(self, _aggregate: &TestAggregate) -> Result<Vec<TestEvent>, AggregateError> {
-//         let event = TestEvent::SomethingElse(SomethingElse { description: self.description.clone() });
-//         Ok(vec![event])
-//     }
-// }
-
 
 struct TestQuery {
     events: Rc<RwLock<Vec<EventEnvelope<TestAggregate>>>>

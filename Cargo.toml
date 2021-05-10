@@ -10,8 +10,7 @@ repository = "https://github.com/serverlesstechnology/postgres-es"
 readme = "README.md"
 
 [dependencies]
-#cqrs-es = "0.0.20"
-cqrs-es = { path = "../cqrs" }
+cqrs-es = "0.0.20"
 
 postgres = {version = "0.15.2", features = ["with-serde_json"]}
 postgres-shared = "0.4.2"
