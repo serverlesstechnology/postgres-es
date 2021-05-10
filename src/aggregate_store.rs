@@ -1,26 +1,20 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-use cqrs_es::{Aggregate, AggregateContext, AggregateError, DomainEvent, EventEnvelope, EventStore};
+use cqrs_es::{Aggregate, AggregateContext, AggregateError, EventEnvelope, EventStore};
 use postgres::Connection;
 use serde_json::Value;
 
 /// Storage engine using an Postgres backing and relying on a serialization of the aggregate rather
 /// than individual events. This is similar to the "snapshot strategy" seen in many CQRS
 /// frameworks.
-pub struct PostgresSnapshotStore<A, E>
-    where
-        A: Aggregate,
-        E: DomainEvent<A>
+pub struct PostgresSnapshotStore<A: Aggregate>
 {
     conn: Connection,
-    _phantom: PhantomData<(A, E)>,
+    _phantom: PhantomData<A>,
 }
 
-impl<A, E> PostgresSnapshotStore<A, E>
-    where
-        A: Aggregate,
-        E: DomainEvent<A>
+impl<A: Aggregate> PostgresSnapshotStore<A>
 {
     /// Creates a new `PostgresSnapshotStore` from the provided database connection.
     pub fn new(conn: Connection) -> Self {
@@ -46,12 +40,9 @@ static SELECT_SNAPSHOT: &str = "SELECT aggregate_type, aggregate_id, last_sequen
                                 FROM snapshots
                                 WHERE aggregate_type = $1 AND aggregate_id = $2";
 
-impl<A, E> EventStore<A, E, PostgresSnapshotStoreAggregateContext<A>> for PostgresSnapshotStore<A, E>
-    where
-        A: Aggregate,
-        E: DomainEvent<A>
+impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>> for PostgresSnapshotStore<A>
 {
-    fn load(&self, aggregate_id: &str) -> Vec<EventEnvelope<A, E>> {
+    fn load(&self, aggregate_id: &str) -> Vec<EventEnvelope<A>> {
         let agg_type = A::aggregate_type();
         let id = aggregate_id.to_string();
         let mut result = Vec::new();
@@ -62,7 +53,7 @@ impl<A, E> EventStore<A, E, PostgresSnapshotStoreAggregateContext<A>> for Postgr
                     let aggregate_id: String = row.get("aggregate_id");
                     let s: i64 = row.get("sequence");
                     let sequence = s as usize;
-                    let payload: E = match serde_json::from_value(row.get("payload")) {
+                    let payload: A::Event = match serde_json::from_value(row.get("payload")) {
                         Ok(payload) => payload,
                         Err(err) => {
                             panic!("bad payload found in events table for aggregate id {} with error: {}", &id, err);
@@ -111,7 +102,7 @@ impl<A, E> EventStore<A, E, PostgresSnapshotStoreAggregateContext<A>> for Postgr
         }
     }
 
-    fn commit(&self, events: Vec<E>, context: PostgresSnapshotStoreAggregateContext<A>, metadata: HashMap<String, String>) -> Result<Vec<EventEnvelope<A, E>>, AggregateError> {
+    fn commit(&self, events: Vec<A::Event>, context: PostgresSnapshotStoreAggregateContext<A>, metadata: HashMap<String, String>) -> Result<Vec<EventEnvelope<A>>, AggregateError> {
         let mut updated_aggregate = context.aggregate_copy();
         let aggregate_id = context.aggregate_id.as_str();
         let current_sequence = context.current_sequence;
@@ -154,7 +145,7 @@ impl<A, E> EventStore<A, E, PostgresSnapshotStoreAggregateContext<A>> for Postgr
                     panic!("unable to insert event table for aggregate id {} with error: {}\n  and payload: {}", &id, err, &payload);
                 }
             };
-            event.payload.apply(&mut updated_aggregate);
+            updated_aggregate.apply(&event.payload);
         }
 
         let agg_type = A::aggregate_type();

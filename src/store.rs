@@ -1,24 +1,18 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-use cqrs_es::{Aggregate, AggregateContext, AggregateError, DomainEvent, EventEnvelope, EventStore};
+use cqrs_es::{Aggregate, AggregateContext, AggregateError, EventEnvelope, EventStore};
 use postgres::Connection;
 
 /// Storage engine using an Postgres backing. This is the only persistent store currently
 /// provided.
-pub struct PostgresStore<A, E>
-    where
-        A: Aggregate,
-        E: DomainEvent<A>
+pub struct PostgresStore<A: Aggregate>
 {
     conn: Connection,
-    _phantom: PhantomData<(A, E)>,
+    _phantom: PhantomData<A>,
 }
 
-impl<A, E> PostgresStore<A, E>
-    where
-        A: Aggregate,
-        E: DomainEvent<A>
+impl<A: Aggregate> PostgresStore<A>
 {
     /// Creates a new `PostgresStore` from the provided database connection.
     pub fn new(conn: Connection) -> Self {
@@ -35,12 +29,9 @@ static SELECT_EVENTS: &str = "SELECT aggregate_type, aggregate_id, sequence, pay
                                 FROM events
                                 WHERE aggregate_type = $1 AND aggregate_id = $2 ORDER BY sequence";
 
-impl<A, E> EventStore<A, E, PostgresStoreAggregateContext<A>> for PostgresStore<A, E>
-    where
-        A: Aggregate,
-        E: DomainEvent<A>
+impl<A: Aggregate> EventStore<A, PostgresStoreAggregateContext<A>> for PostgresStore<A>
 {
-    fn load(&self, aggregate_id: &str) -> Vec<EventEnvelope<A, E>> {
+    fn load(&self, aggregate_id: &str) -> Vec<EventEnvelope<A>> {
         let agg_type = A::aggregate_type();
         let id = aggregate_id.to_string();
         let mut result = Vec::new();
@@ -51,7 +42,7 @@ impl<A, E> EventStore<A, E, PostgresStoreAggregateContext<A>> for PostgresStore<
                     let aggregate_id: String = row.get("aggregate_id");
                     let s: i64 = row.get("sequence");
                     let sequence = s as usize;
-                    let payload: E = match serde_json::from_value(row.get("payload")) {
+                    let payload: A::Event = match serde_json::from_value(row.get("payload")) {
                         Ok(payload) => payload,
                         Err(err) => {
                             panic!("bad payload found in events table for aggregate id {} with error: {}", &id, err);
@@ -72,7 +63,7 @@ impl<A, E> EventStore<A, E, PostgresStoreAggregateContext<A>> for PostgresStore<
         for envelope in committed_events {
             current_sequence = envelope.sequence;
             let event = envelope.payload;
-            event.apply(&mut aggregate);
+            aggregate.apply(&event);
         };
         PostgresStoreAggregateContext {
             aggregate_id: aggregate_id.to_string(),
@@ -81,7 +72,7 @@ impl<A, E> EventStore<A, E, PostgresStoreAggregateContext<A>> for PostgresStore<
         }
     }
 
-    fn commit(&self, events: Vec<E>, context: PostgresStoreAggregateContext<A>, metadata: HashMap<String, String>) -> Result<Vec<EventEnvelope<A, E>>, AggregateError> {
+    fn commit(&self, events: Vec<A::Event>, context: PostgresStoreAggregateContext<A>, metadata: HashMap<String, String>) -> Result<Vec<EventEnvelope<A>>, AggregateError> {
         let aggregate_id = context.aggregate_id.as_str();
         let current_sequence = context.current_sequence;
         let wrapped_events = self.wrap_events(aggregate_id, current_sequence, events, metadata);
@@ -131,8 +122,7 @@ impl<A, E> EventStore<A, E, PostgresStoreAggregateContext<A>> for PostgresStore<
 
 
 /// Holds context for a pure event store implementation for MemStore
-pub struct PostgresStoreAggregateContext<A>
-    where A: Aggregate
+pub struct PostgresStoreAggregateContext<A: Aggregate>
 {
     /// The aggregate ID of the aggregate instance that has been loaded.
     pub aggregate_id: String,
@@ -143,8 +133,7 @@ pub struct PostgresStoreAggregateContext<A>
 }
 
 
-impl<A> AggregateContext<A> for PostgresStoreAggregateContext<A>
-    where A: Aggregate
+impl<A: Aggregate> AggregateContext<A> for PostgresStoreAggregateContext<A>
 {
     fn aggregate(&self) -> &A {
         &self.aggregate
