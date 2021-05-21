@@ -1,16 +1,17 @@
 [package]
 name = "postgres-es"
-version = "0.0.20"
+version = "0.1.0"
 authors = ["Dave Garred <dave.garred@serverlesstechnology.com>"]
 edition = "2018"
 license-file = "LICENSE"
 keywords = ["cqrs", "event-sourcing", "serverless", "lambda"]
 description = "A Postgres implementation of an event store for cqrs-es."
 repository = "https://github.com/serverlesstechnology/postgres-es"
+documentation = "https://docs.rs/postgres-es"
 readme = "README.md"
 
 [dependencies]
-cqrs-es = "0.0.20"
+cqrs-es = "0.1.0"
 
 postgres = {version = "0.15.2", features = ["with-serde_json"]}
 postgres-shared = "0.4.2"

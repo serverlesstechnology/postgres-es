@@ -23,6 +23,7 @@ impl<A: Aggregate> PostgresStore<A>
     }
 }
 
+
 static INSERT_EVENT: &str = "INSERT INTO events (aggregate_type, aggregate_id, sequence, payload, metadata)
                                VALUES ($1, $2, $3, $4, $5)";
 static SELECT_EVENTS: &str = "SELECT aggregate_type, aggregate_id, sequence, payload, metadata
@@ -82,7 +83,7 @@ impl<A: Aggregate> EventStore<A, PostgresStoreAggregateContext<A>> for PostgresS
                 return Err(AggregateError::TechnicalError(err.to_string()));
             }
         };
-        for event in wrapped_events.clone() {
+        for event in &wrapped_events {
             let agg_type = event.aggregate_type.clone();
             let id = context.aggregate_id.clone();
             let sequence = event.sequence as i64;

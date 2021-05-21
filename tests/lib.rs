@@ -4,6 +4,7 @@ use std::sync::RwLock;
 use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, QueryProcessor};
 use postgres::{Connection, TlsMode};
 use serde::{Deserialize, Serialize};
+use postgres_es::PostgresStore;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TestAggregate {
@@ -271,4 +272,15 @@ mod tests {
         let new_event_val = Value::Object(new_val_map);
         serde_json::from_value(new_event_val).unwrap()
     }
+}
+
+
+#[test]
+fn thread_safe_test() {
+    // TODO: use R2D2 for sync/send
+    // https://github.com/sfackler/r2d2-postgres
+    // fn is_sync<T: Sync>() {}
+    // is_sync::<PostgresStore<TestAggregate>>();
+    fn is_send<T: Send>() {}
+    is_send::<PostgresStore<TestAggregate>>();
 }

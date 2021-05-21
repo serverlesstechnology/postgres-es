@@ -64,8 +64,7 @@ impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>> for P
                 }
             }
             Err(e) => {
-                println!("{:?}", e);
-                panic!(e);
+                panic!("{:?}", e);
             }
         }
         result
@@ -96,8 +95,7 @@ impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>> for P
                 }
             }
             Err(e) => {
-                println!("{:?}", e);
-                panic!(e);
+                panic!("{:?}", e);
             }
         }
     }
