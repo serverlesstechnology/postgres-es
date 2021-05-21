@@ -1,29 +1,27 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, Query, QueryProcessor};
+use cqrs_es::{Aggregate, AggregateError, EventEnvelope, Query, QueryProcessor};
 use postgres::Connection;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 /// This provides a simple query repository that can be used both to return deserialized
 /// views and to act as a query processor.
-pub struct GenericQueryRepository<V, A, E>
-    where V: Query<A, E>,
-          E: DomainEvent<A>,
+pub struct GenericQueryRepository<V, A>
+    where V: Query<A>,
           A: Aggregate
 {
     conn: Connection,
     query_name: String,
     error_handler: Option<Box<ErrorHandler>>,
-    _phantom: PhantomData<(V, A, E)>,
+    _phantom: PhantomData<(V, A)>,
 }
 
 type ErrorHandler = dyn Fn(AggregateError);
 
-impl<V, A, E> GenericQueryRepository<V, A, E>
-    where V: Query<A, E>,
-          E: DomainEvent<A>,
+impl<V, A> GenericQueryRepository<V, A>
+    where V: Query<A>,
           A: Aggregate
 {
     /// Creates a new `GenericQueryRepository` that will store its' views in the table named
@@ -85,7 +83,7 @@ impl<V, A, E> GenericQueryRepository<V, A, E>
     }
 
     /// Used to apply committed events to a view.
-    pub fn apply_events(&self, query_instance_id: &str, events: &[EventEnvelope<A, E>])
+    pub fn apply_events(&self, query_instance_id: &str, events: &[EventEnvelope<A>])
     {
         match self.load_mut(query_instance_id.to_string()) {
             Ok((mut view, view_context)) => {
@@ -135,12 +133,11 @@ impl<V, A, E> GenericQueryRepository<V, A, E>
     }
 }
 
-impl<Q, A, E> QueryProcessor<A, E> for GenericQueryRepository<Q, A, E>
-    where Q: Query<A, E>,
-          E: DomainEvent<A>,
+impl<Q, A> QueryProcessor<A> for GenericQueryRepository<Q, A>
+    where Q: Query<A>,
           A: Aggregate
 {
-    fn dispatch(&self, query_instance_id: &str, events: &[EventEnvelope<A, E>]) {
+    fn dispatch(&self, query_instance_id: &str, events: &[EventEnvelope<A>]) {
         self.apply_events(&query_instance_id.to_string(), &events);
     }
 }

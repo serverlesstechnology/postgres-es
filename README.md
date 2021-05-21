@@ -11,8 +11,8 @@
 
 ```toml
 [dependencies]
-postgres-es = "0.0.18"
-cqrs-es = "0.0.18"
+postgres-es = "0.1.0"
+cqrs-es = "0.1.0"
 ```
 
 ## Usage
