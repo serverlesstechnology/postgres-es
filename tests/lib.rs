@@ -132,7 +132,6 @@ pub type TestEventEnvelope = EventEnvelope<TestAggregate>;
 mod tests {
     use std::collections::HashMap;
 
-    use chrono::Utc;
     use serde_json::{Map, Value};
     use static_assertions::assert_impl_all;
 
@@ -145,9 +144,9 @@ mod tests {
     const CONNECTION_STRING: &str = "postgresql://test_user:test_pass@localhost:5432/test";
 
     fn metadata() -> HashMap<String, String> {
-        let now = Utc::now();
+        let now = "2021-03-18T12:32:45.930Z".to_string();
         let mut metadata = HashMap::new();
-        metadata.insert("time".to_string(), now.to_rfc3339());
+        metadata.insert("time".to_string(), now);
         metadata
     }
 
