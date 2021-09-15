@@ -2,7 +2,6 @@ use std::rc::Rc;
 use std::sync::RwLock;
 
 use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, QueryProcessor};
-use postgres::{Connection, TlsMode};
 use serde::{Deserialize, Serialize};
 use postgres_es::PostgresStore;
 
@@ -135,7 +134,7 @@ mod tests {
     use serde_json::{Map, Value};
     use static_assertions::assert_impl_all;
 
-    use postgres_es::{postgres_cqrs, PostgresSnapshotStore, PostgresStore, PostgresStoreAggregateContext};
+    use postgres_es::{postgres_cqrs, PostgresSnapshotStore, PostgresStore, PostgresStoreAggregateContext, Connection};
 
     use super::*;
 
@@ -151,21 +150,18 @@ mod tests {
     }
 
     fn test_store() -> PostgresStore<TestAggregate> {
-        let conn = Connection::connect(CONNECTION_STRING, TlsMode::None).unwrap();
-        PostgresStore::<TestAggregate>::new(conn)
+        PostgresStore::<TestAggregate>::new(Connection::new(CONNECTION_STRING))
     }
 
     fn test_snapshot_store() -> PostgresSnapshotStore<TestAggregate> {
-        let conn = Connection::connect(CONNECTION_STRING, TlsMode::None).unwrap();
-        PostgresSnapshotStore::<TestAggregate>::new(conn)
+        PostgresSnapshotStore::<TestAggregate>::new(Connection::new(CONNECTION_STRING))
     }
 
     #[test]
     fn test_valid_cqrs_framework() {
         let view_events: Rc<RwLock<Vec<EventEnvelope<TestAggregate>>>> = Default::default();
         let query = TestQuery::new(view_events);
-        let conn = Connection::connect(CONNECTION_STRING, TlsMode::None).unwrap();
-        let _ps = postgres_cqrs(conn, vec![Box::new(query)]);
+        let _ps = postgres_cqrs(Connection::new(CONNECTION_STRING), vec![Box::new(query)]);
     }
 
     #[test]

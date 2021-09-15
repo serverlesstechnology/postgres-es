@@ -11,21 +11,26 @@
 
 ```toml
 [dependencies]
-postgres-es = "0.1.0"
-cqrs-es = "0.1.0"
+postgres-es = "0.1.1"
+cqrs-es = "0.1.1"
 ```
 
 ## Usage
 
 ```
-use postgres::{Connection, TlsMode};
-use postgres_es::PostgresCqrs;
+use postgres_es::{postgres_cqrs, PostgresStore, Connection};
 
-let connection = Connection::connect("postgresql://demo_user:demo_pass@localhost:5432/demo", TlsMode::None).unwrap();
+let connection = Connection::new("postgresql://demo_user:demo_pass@localhost:5432/demo");
 let cqrs = postgres_es::postgres_cqrs(connection, vec![Box::new(my_query)])
 ```
 
+## Change log
+
+#### `v0.1.1`
+Use r2d2_postgres crate to support `Send + Sync` for multi-threaded applications.
+
 ## TODOs
+- Add support for TLS.
 - Some additional framework around `GenericQueryRepository` to simplify event replay.
 
 ## Demo

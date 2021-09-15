@@ -2,8 +2,7 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 
 use cqrs_es::{Aggregate, AggregateContext, AggregateError, EventEnvelope, EventStore};
-use postgres::Connection;
-use serde_json::Value;
+use crate::connection::Connection;
 
 /// Storage engine using an Postgres backing and relying on a serialization of the aggregate rather
 /// than individual events. This is similar to the "snapshot strategy" seen in many CQRS
@@ -46,14 +45,15 @@ impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>> for P
         let agg_type = A::aggregate_type();
         let id = aggregate_id.to_string();
         let mut result = Vec::new();
-        match self.conn.query(SELECT_EVENTS, &[&agg_type, &id]) {
+        let mut conn = self.conn.conn();
+        match conn.query(SELECT_EVENTS, &[&agg_type, &id]) {
             Ok(rows) => {
                 for row in rows.iter() {
                     let aggregate_type: String = row.get("aggregate_type");
                     let aggregate_id: String = row.get("aggregate_id");
                     let s: i64 = row.get("sequence");
                     let sequence = s as usize;
-                    let payload: A::Event = match serde_json::from_value(row.get("payload")) {
+                    let payload: A::Event = match serde_json::from_str(row.get("payload")) {
                         Ok(payload) => payload,
                         Err(err) => {
                             panic!("bad payload found in events table for aggregate id {} with error: {}", &id, err);
@@ -71,9 +71,10 @@ impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>> for P
     }
     fn load_aggregate(&self, aggregate_id: &str) -> PostgresSnapshotStoreAggregateContext<A> {
         let agg_type = A::aggregate_type();
-        match self.conn.query(SELECT_SNAPSHOT, &[&agg_type, &aggregate_id.to_string()]) {
+        let mut conn = self.conn.conn();
+        match conn.query(SELECT_SNAPSHOT, &[&agg_type, &aggregate_id.to_string()]) {
             Ok(rows) => {
-                match rows.iter().next() {
+                match rows.get(0) {
                     None => {
                         let current_sequence = 0;
                         PostgresSnapshotStoreAggregateContext {
@@ -84,8 +85,8 @@ impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>> for P
                     }
                     Some(row) => {
                         let s: i64 = row.get("last_sequence");
-                        let val: Value = row.get("payload");
-                        let aggregate = serde_json::from_value(val).unwrap();
+                        let val: String = row.get("payload");
+                        let aggregate = serde_json::from_str(&val).unwrap();
                         PostgresSnapshotStoreAggregateContext {
                             aggregate_id: aggregate_id.to_string(),
                             aggregate,
@@ -105,7 +106,8 @@ impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>> for P
         let aggregate_id = context.aggregate_id.as_str();
         let current_sequence = context.current_sequence;
         let wrapped_events = self.wrap_events(aggregate_id, current_sequence, events, metadata);
-        let trans = match self.conn.transaction() {
+        let mut conn = self.conn.conn();
+        let trans = match conn.transaction() {
             Ok(t) => { t }
             Err(err) => {
                 return Err(AggregateError::TechnicalError(err.to_string()));
@@ -117,19 +119,20 @@ impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>> for P
             let id = context.aggregate_id.clone();
             let sequence = event.sequence as i64;
             last_sequence = sequence;
-            let payload = match serde_json::to_value(&event.payload) {
+            let payload = match serde_json::to_string(&event.payload) {
                 Ok(payload) => payload,
                 Err(err) => {
                     panic!("bad payload found in events table for aggregate id {} with error: {}", &id, err);
                 }
             };
-            let metadata = match serde_json::to_value(&event.metadata) {
+            let metadata = match serde_json::to_string(&event.metadata) {
                 Ok(metadata) => metadata,
                 Err(err) => {
                     panic!("bad metadata found in events table for aggregate id {} with error: {}", &id, err);
                 }
             };
-            match self.conn.execute(INSERT_EVENT, &[&agg_type, &id, &sequence, &payload, &metadata]) {
+            let mut conn = self.conn.conn();
+            match conn.execute(INSERT_EVENT, &[&agg_type, &id, &sequence, &payload, &metadata]) {
                 Ok(_) => {}
                 Err(err) => {
                     match err.code() {
@@ -147,21 +150,22 @@ impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>> for P
         }
 
         let agg_type = A::aggregate_type();
-        let aggregate_payload = match serde_json::to_value(updated_aggregate) {
+        let aggregate_payload = match serde_json::to_string(&updated_aggregate) {
             Ok(val) => val,
             Err(err) => {
                 panic!("bad metadata found in events table for aggregate id {} with error: {}", &aggregate_id, err);
             }
         };
+        let mut conn = self.conn.conn();
         if context.current_sequence == 0 {
-            match self.conn.execute(INSERT_SNAPSHOT, &[&agg_type, &aggregate_id, &last_sequence, &aggregate_payload]) {
+            match conn.execute(INSERT_SNAPSHOT, &[&agg_type, &aggregate_id, &last_sequence, &aggregate_payload]) {
                 Ok(_) => {}
                 Err(err) => {
                     panic!("unable to insert snapshot for aggregate id {} with error: {}\n  and payload: {}", &aggregate_id, err, &aggregate_payload);
                 }
             };
         } else {
-            match self.conn.execute(UPDATE_SNAPSHOT, &[&agg_type, &aggregate_id, &last_sequence, &aggregate_payload]) {
+            match conn.execute(UPDATE_SNAPSHOT, &[&agg_type, &aggregate_id, &last_sequence, &aggregate_payload]) {
                 Ok(_) => {}
                 Err(err) => {
                     panic!("unable to update snapshot for aggregate id {} with error: {}\n  and payload: {}", &aggregate_id, err, &aggregate_payload);

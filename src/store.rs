@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 
 use cqrs_es::{Aggregate, AggregateContext, AggregateError, EventEnvelope, EventStore};
-use postgres::Connection;
+use crate::connection::Connection;
 
 /// Storage engine using an Postgres backing. This is the only persistent store currently
 /// provided.
-pub struct PostgresStore<A: Aggregate>
+pub struct PostgresStore<A: Aggregate + Send + Sync>
 {
     conn: Connection,
     _phantom: PhantomData<A>,
@@ -36,14 +36,15 @@ impl<A: Aggregate> EventStore<A, PostgresStoreAggregateContext<A>> for PostgresS
         let agg_type = A::aggregate_type();
         let id = aggregate_id.to_string();
         let mut result = Vec::new();
-        match self.conn.query(SELECT_EVENTS, &[&agg_type, &id]) {
+        let mut conn = self.conn.conn();
+        match conn.query(SELECT_EVENTS, &[&agg_type, &id]) {
             Ok(rows) => {
                 for row in rows.iter() {
                     let aggregate_type: String = row.get("aggregate_type");
                     let aggregate_id: String = row.get("aggregate_id");
                     let s: i64 = row.get("sequence");
                     let sequence = s as usize;
-                    let payload: A::Event = match serde_json::from_value(row.get("payload")) {
+                    let payload: A::Event = match serde_json::from_str(row.get("payload")) {
                         Ok(payload) => payload,
                         Err(err) => {
                             panic!("bad payload found in events table for aggregate id {} with error: {}", &id, err);
@@ -77,7 +78,8 @@ impl<A: Aggregate> EventStore<A, PostgresStoreAggregateContext<A>> for PostgresS
         let aggregate_id = context.aggregate_id.as_str();
         let current_sequence = context.current_sequence;
         let wrapped_events = self.wrap_events(aggregate_id, current_sequence, events, metadata);
-        let trans = match self.conn.transaction() {
+        let mut conn = self.conn.conn();
+        let trans = match conn.transaction() {
             Ok(t) => { t }
             Err(err) => {
                 return Err(AggregateError::TechnicalError(err.to_string()));
@@ -87,19 +89,20 @@ impl<A: Aggregate> EventStore<A, PostgresStoreAggregateContext<A>> for PostgresS
             let agg_type = event.aggregate_type.clone();
             let id = context.aggregate_id.clone();
             let sequence = event.sequence as i64;
-            let payload = match serde_json::to_value(&event.payload) {
+            let payload = match serde_json::to_string(&event.payload) {
                 Ok(payload) => payload,
                 Err(err) => {
                     panic!("bad payload found in events table for aggregate id {} with error: {}", &id, err);
                 }
             };
-            let metadata = match serde_json::to_value(&event.metadata) {
+            let metadata = match serde_json::to_string(&event.metadata) {
                 Ok(metadata) => metadata,
                 Err(err) => {
                     panic!("bad metadata found in events table for aggregate id {} with error: {}", &id, err);
                 }
             };
-            match self.conn.execute(INSERT_EVENT, &[&agg_type, &id, &sequence, &payload, &metadata]) {
+            let mut conn = self.conn.conn();
+            match conn.execute(INSERT_EVENT, &[&agg_type, &id, &sequence, &payload, &metadata]) {
                 Ok(_) => {}
                 Err(err) => {
                     match err.code() {

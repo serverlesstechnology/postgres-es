@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-#![deny(missing_docs)]
+// #![deny(missing_docs)]
 #![deny(clippy::all)]
 // #![warn(clippy::pedantic)]
 //! # postgres-es
@@ -15,16 +15,18 @@
 //!
 //! ```toml
 //! [dependencies]
-//! postgres-es = "0.1.0"
-//! cqrs-es = "0.1.0"
+//! postgres-es = "0.1.1"
+//! cqrs-es = "0.1.1"
 //! ```
 pub use crate::store::*;
 pub use crate::aggregate_store::*;
 pub use crate::queries::*;
 pub use crate::cqrs::*;
+pub use crate::connection::*;
 
 mod store;
 mod queries;
 mod cqrs;
 mod aggregate_store;
+mod connection;
 
