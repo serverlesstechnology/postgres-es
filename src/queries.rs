@@ -1,16 +1,17 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
+use crate::connection::Connection;
 use cqrs_es::{Aggregate, AggregateError, EventEnvelope, Query, QueryProcessor};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use crate::connection::Connection;
 
 /// This provides a simple query repository that can be used both to return deserialized
 /// views and to act as a query processor.
 pub struct GenericQueryRepository<V, A>
-    where V: Query<A>,
-          A: Aggregate
+where
+    V: Query<A>,
+    A: Aggregate,
 {
     conn: Connection,
     query_name: String,
@@ -18,11 +19,12 @@ pub struct GenericQueryRepository<V, A>
     _phantom: PhantomData<(V, A)>,
 }
 
-type ErrorHandler = dyn Fn(AggregateError);
+type ErrorHandler = dyn Fn(AggregateError) + Send + Sync + 'static;
 
 impl<V, A> GenericQueryRepository<V, A>
-    where V: Query<A>,
-          A: Aggregate
+where
+    V: Query<A>,
+    A: Aggregate,
 {
     /// Creates a new `GenericQueryRepository` that will store its' views in the table named
     /// identically to the `query_name` value provided. This table should be created by the user
@@ -36,7 +38,9 @@ impl<V, A> GenericQueryRepository<V, A>
             _phantom: PhantomData,
         }
     }
-    /// Since inbound views cannot
+    /// Allows the user to apply a custom error handler to the query.
+    /// Queries _should_ never cause errors, but programming errors or other technical problems
+    /// could and this is where the user should log or otherwise register the issue.
     pub fn with_error_handler(&mut self, error_handler: Box<ErrorHandler>) {
         self.error_handler = Some(error_handler);
     }
@@ -47,11 +51,17 @@ impl<V, A> GenericQueryRepository<V, A>
         self.query_name.to_string()
     }
 
-
     fn load_mut(&self, query_instance_id: String) -> Result<(V, QueryContext<V>), AggregateError> {
-        let query = format!("SELECT version,payload FROM {} WHERE query_instance_id= $1", &self.query_name);
-        let result = match self.conn.conn().query(query.as_str(), &[&query_instance_id]) {
-            Ok(result) => { result }
+        let query = format!(
+            "SELECT version,payload FROM {} WHERE query_instance_id= $1",
+            &self.query_name
+        );
+        let result = match self
+            .conn
+            .conn()
+            .query(query.as_str(), &[&query_instance_id])
+        {
+            Ok(result) => result,
             Err(e) => {
                 return Err(AggregateError::new(e.to_string().as_str()));
             }
@@ -83,8 +93,7 @@ impl<V, A> GenericQueryRepository<V, A>
     }
 
     /// Used to apply committed events to a view.
-    pub fn apply_events(&self, query_instance_id: &str, events: &[EventEnvelope<A>])
-    {
+    pub fn apply_events(&self, query_instance_id: &str, events: &[EventEnvelope<A>]) {
         match self.load_mut(query_instance_id.to_string()) {
             Ok((mut view, view_context)) => {
                 for event in events {
@@ -92,24 +101,32 @@ impl<V, A> GenericQueryRepository<V, A>
                 }
                 view_context.commit(&self.conn, view);
             }
-            Err(e) => {
-                match &self.error_handler {
-                    None => {}
-                    Some(handler) => {
-                        (handler)(e);
-                    }
+            Err(e) => match &self.error_handler {
+                None => {}
+                Some(handler) => {
+                    (handler)(e);
                 }
-            }
+            },
         };
     }
 
     /// Loads and deserializes a view based on the view id.
     pub fn load(&self, query_instance_id: String) -> Option<V> {
-        let query = format!("SELECT version,payload FROM {} WHERE query_instance_id= $1", &self.query_name);
-        let result = match self.conn.conn().query(query.as_str(), &[&query_instance_id]) {
-            Ok(result) => { result }
+        let query = format!(
+            "SELECT version,payload FROM {} WHERE query_instance_id= $1",
+            &self.query_name
+        );
+        let result = match self
+            .conn
+            .conn()
+            .query(query.as_str(), &[&query_instance_id])
+        {
+            Ok(result) => result,
             Err(err) => {
-                panic!("unable to load view '{}' with id: '{}', encountered: {}", &query_instance_id, &self.query_name, err);
+                panic!(
+                    "unable to load view '{}' with id: '{}', encountered: {}",
+                    &query_instance_id, &self.query_name, err
+                );
             }
         };
         match result.get(0) {
@@ -134,8 +151,9 @@ impl<V, A> GenericQueryRepository<V, A>
 }
 
 impl<Q, A> QueryProcessor<A> for GenericQueryRepository<Q, A>
-    where Q: Query<A>,
-          A: Aggregate
+where
+    Q: Query<A> + Send + Sync + 'static,
+    A: Aggregate,
 {
     fn dispatch(&self, query_instance_id: &str, events: &[EventEnvelope<A>]) {
         self.apply_events(&query_instance_id.to_string(), events);
@@ -143,7 +161,8 @@ impl<Q, A> QueryProcessor<A> for GenericQueryRepository<Q, A>
 }
 
 struct QueryContext<V>
-    where V: Debug + Default + Serialize + DeserializeOwned + Default
+where
+    V: Debug + Default + Serialize + DeserializeOwned + Default,
 {
     query_name: String,
     query_instance_id: String,
@@ -152,25 +171,41 @@ struct QueryContext<V>
 }
 
 impl<V> QueryContext<V>
-    where V: Debug + Default + Serialize + DeserializeOwned + Default
+where
+    V: Debug + Default + Serialize + DeserializeOwned + Default,
 {
     fn commit(&self, conn: &Connection, view: V) {
         let sql = match self.version {
-            0 => format!("INSERT INTO {} (payload, version, query_instance_id) VALUES ( $1, $2, $3 )", &self.query_name),
-            _ => format!("UPDATE {} SET payload= $1 , version= $2 WHERE query_instance_id= $3", &self.query_name),
+            0 => format!(
+                "INSERT INTO {} (payload, version, query_instance_id) VALUES ( $1, $2, $3 )",
+                &self.query_name
+            ),
+            _ => format!(
+                "UPDATE {} SET payload= $1 , version= $2 WHERE query_instance_id= $3",
+                &self.query_name
+            ),
         };
         let version = self.version + 1;
         // let query_instance_id = &self.query_instance_id;
         let payload = match serde_json::to_string(&view) {
-            Ok(payload) => { payload }
+            Ok(payload) => payload,
             Err(err) => {
-                panic!("unable to covert view '{}' with id: '{}', to value: {}\n  view: {:?}", &self.query_instance_id, &self.query_name, err, &view);
+                panic!(
+                    "unable to covert view '{}' with id: '{}', to value: {}\n  view: {:?}",
+                    &self.query_instance_id, &self.query_name, err, &view
+                );
             }
         };
-        match conn.conn().execute(sql.as_str(), &[&payload, &version, &self.query_instance_id]) {
+        match conn
+            .conn()
+            .execute(sql.as_str(), &[&payload, &version, &self.query_instance_id])
+        {
             Ok(_) => {}
             Err(err) => {
-                panic!("unable to update view '{}' with id: '{}', encountered: {}", &self.query_instance_id, &self.query_name, err);
+                panic!(
+                    "unable to update view '{}' with id: '{}', encountered: {}",
+                    &self.query_instance_id, &self.query_name, err
+                );
             }
         };
     }

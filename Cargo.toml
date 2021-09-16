@@ -1,6 +1,6 @@
 [package]
 name = "postgres-es"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Dave Garred <dave.garred@serverlesstechnology.com>"]
 edition = "2018"
 license-file = "LICENSE"
@@ -11,7 +11,7 @@ documentation = "https://docs.rs/postgres-es"
 readme = "README.md"
 
 [dependencies]
-cqrs-es = "0.1.1"
+cqrs-es = "0.1.2"
 
 r2d2_postgres = "0.18.1"
 serde = { version = "1.0.126", features = ["derive"]}

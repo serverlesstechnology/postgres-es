@@ -1,9 +1,8 @@
-use std::rc::Rc;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, QueryProcessor};
-use serde::{Deserialize, Serialize};
 use postgres_es::PostgresStore;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TestAggregate {
@@ -16,12 +15,16 @@ impl Aggregate for TestAggregate {
     type Command = TestCommand;
     type Event = TestEvent;
 
-    fn aggregate_type() -> &'static str { "TestAggregate" }
+    fn aggregate_type() -> &'static str {
+        "TestAggregate"
+    }
 
     fn handle(&self, command: Self::Command) -> Result<Vec<Self::Event>, AggregateError> {
         match command {
             TestCommand::CreateTest(command) => {
-                let event = TestEvent::Created(Created { id: command.id.to_string() });
+                let event = TestEvent::Created(Created {
+                    id: command.id.to_string(),
+                });
                 Ok(vec![event])
             }
             TestCommand::ConfirmTest(command) => {
@@ -30,11 +33,15 @@ impl Aggregate for TestAggregate {
                         return Err(AggregateError::new("test already performed"));
                     }
                 }
-                let event = TestEvent::Tested(Tested { test_name: command.test_name });
+                let event = TestEvent::Tested(Tested {
+                    test_name: command.test_name,
+                });
                 Ok(vec![event])
             }
             TestCommand::DoSomethingElse(command) => {
-                let event = TestEvent::SomethingElse(SomethingElse { description: command.description.clone() });
+                let event = TestEvent::SomethingElse(SomethingElse {
+                    description: command.description.clone(),
+                });
                 Ok(vec![event])
             }
         }
@@ -45,9 +52,7 @@ impl Aggregate for TestAggregate {
             TestEvent::Created(e) => {
                 self.id = e.id.clone();
             }
-            TestEvent::Tested(e) => {
-                self.tests.push(e.test_name.clone())
-            }
+            TestEvent::Tested(e) => self.tests.push(e.test_name.clone()),
             TestEvent::SomethingElse(e) => {
                 self.description = e.description.clone();
             }
@@ -74,17 +79,17 @@ pub enum TestEvent {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Created {
-    pub id: String
+    pub id: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Tested {
-    pub test_name: String
+    pub test_name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct SomethingElse {
-    pub description: String
+    pub description: String,
 }
 
 impl DomainEvent for TestEvent {}
@@ -108,13 +113,14 @@ pub struct DoSomethingElse {
 }
 
 struct TestQuery {
-    events: Rc<RwLock<Vec<EventEnvelope<TestAggregate>>>>
+    events: Arc<RwLock<Vec<EventEnvelope<TestAggregate>>>>,
 }
 
 impl TestQuery {
-    fn new(events: Rc<RwLock<Vec<EventEnvelope<TestAggregate>>>>) -> Self { TestQuery { events } }
+    fn new(events: Arc<RwLock<Vec<EventEnvelope<TestAggregate>>>>) -> Self {
+        TestQuery { events }
+    }
 }
-
 
 impl QueryProcessor<TestAggregate> for TestQuery {
     fn dispatch(&self, _aggregate_id: &str, events: &[EventEnvelope<TestAggregate>]) {
@@ -134,7 +140,10 @@ mod tests {
     use serde_json::{Map, Value};
     use static_assertions::assert_impl_all;
 
-    use postgres_es::{postgres_cqrs, PostgresSnapshotStore, PostgresStore, PostgresStoreAggregateContext, Connection};
+    use postgres_es::{
+        postgres_cqrs, Connection, PostgresSnapshotStore, PostgresStore,
+        PostgresStoreAggregateContext,
+    };
 
     use super::*;
 
@@ -159,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_valid_cqrs_framework() {
-        let view_events: Rc<RwLock<Vec<EventEnvelope<TestAggregate>>>> = Default::default();
+        let view_events: Arc<RwLock<Vec<EventEnvelope<TestAggregate>>>> = Default::default();
         let query = TestQuery::new(view_events);
         let _ps = postgres_cqrs(Connection::new(CONNECTION_STRING), vec![Box::new(query)]);
     }
@@ -171,17 +180,33 @@ mod tests {
         assert_eq!(0, event_store.load(id.as_str()).len());
         let context = event_store.load_aggregate(id.as_str());
 
-        event_store.commit(vec![
-            TestEvent::Created(Created { id: "test_event_A".to_string() }),
-            TestEvent::Tested(Tested { test_name: "test A".to_string() }),
-        ], context, metadata()).unwrap();
+        event_store
+            .commit(
+                vec![
+                    TestEvent::Created(Created {
+                        id: "test_event_A".to_string(),
+                    }),
+                    TestEvent::Tested(Tested {
+                        test_name: "test A".to_string(),
+                    }),
+                ],
+                context,
+                metadata(),
+            )
+            .unwrap();
 
         assert_eq!(2, event_store.load(id.as_str()).len());
         let context = event_store.load_aggregate(id.as_str());
 
-        event_store.commit(vec![
-            TestEvent::Tested(Tested { test_name: "test B".to_string() }),
-        ], context, metadata()).unwrap();
+        event_store
+            .commit(
+                vec![TestEvent::Tested(Tested {
+                    test_name: "test B".to_string(),
+                })],
+                context,
+                metadata(),
+            )
+            .unwrap();
         assert_eq!(3, event_store.load(id.as_str()).len());
     }
 
@@ -192,17 +217,33 @@ mod tests {
         assert_eq!(0, event_store.load(id.as_str()).len());
         let context = event_store.load_aggregate(id.as_str());
 
-        event_store.commit(vec![
-            TestEvent::Created(Created { id: "test_event_A".to_string() }),
-            TestEvent::Tested(Tested { test_name: "test A".to_string() }),
-        ], context, metadata()).unwrap();
+        event_store
+            .commit(
+                vec![
+                    TestEvent::Created(Created {
+                        id: "test_event_A".to_string(),
+                    }),
+                    TestEvent::Tested(Tested {
+                        test_name: "test A".to_string(),
+                    }),
+                ],
+                context,
+                metadata(),
+            )
+            .unwrap();
 
         assert_eq!(2, event_store.load(id.as_str()).len());
         let context = event_store.load_aggregate(id.as_str());
 
-        event_store.commit(vec![
-            TestEvent::Tested(Tested { test_name: "test B".to_string() }),
-        ], context, metadata()).unwrap();
+        event_store
+            .commit(
+                vec![TestEvent::Tested(Tested {
+                    test_name: "test B".to_string(),
+                })],
+                context,
+                metadata(),
+            )
+            .unwrap();
         assert_eq!(3, event_store.load(id.as_str()).len());
     }
 
@@ -214,31 +255,42 @@ mod tests {
         assert_eq!(0, event_store.load(id.as_str()).len());
         let context = event_store.load_aggregate(id.as_str());
 
-        event_store.commit(vec![
-            TestEvent::Created(Created { id: "test_event_A".to_string() })
-        ],
-                           context,
-                           metadata()).unwrap();
-
+        event_store
+            .commit(
+                vec![TestEvent::Created(Created {
+                    id: "test_event_A".to_string(),
+                })],
+                context,
+                metadata(),
+            )
+            .unwrap();
 
         let context = event_store.load_aggregate(id.as_str());
-        let result = event_store.commit(vec![
-            TestEvent::Tested(Tested { test_name: "test B".to_string() }),
-        ],
-                                        context,
-                                        metadata(),
+        let result = event_store.commit(
+            vec![TestEvent::Tested(Tested {
+                test_name: "test B".to_string(),
+            })],
+            context,
+            metadata(),
         );
         match result {
-            Ok(_) => { panic!("expected an optimistic lock error") }
+            Ok(_) => {
+                panic!("expected an optimistic lock error")
+            }
             Err(e) => {
-                assert_eq!(e, cqrs_es::AggregateError::TechnicalError("optimistic lock error".to_string()));
+                assert_eq!(
+                    e,
+                    cqrs_es::AggregateError::TechnicalError("optimistic lock error".to_string())
+                );
             }
         };
     }
 
     #[test]
     fn test_event_breakout_type() {
-        let event = TestEvent::Created(Created { id: "test_event_A".to_string() });
+        let event = TestEvent::Created(Created {
+            id: "test_event_A".to_string(),
+        });
 
         let (event_type, value) = serialize_event::<TestAggregate>(&event);
         println!("{} - {}", &event_type, &value);
@@ -246,8 +298,7 @@ mod tests {
         assert_eq!(deser, event);
     }
 
-    fn serialize_event<A: Aggregate>(event: &A::Event) -> (String, Value)
-    {
+    fn serialize_event<A: Aggregate>(event: &A::Event) -> (String, Value) {
         let val = serde_json::to_value(event).unwrap();
         match &val {
             Value::Object(object) => {
@@ -257,7 +308,9 @@ mod tests {
                 }
                 panic!("{:?} not a domain event", val);
             }
-            _ => { panic!("{:?} not an object", val); }
+            _ => {
+                panic!("{:?} not an object", val);
+            }
         }
     }
 
@@ -268,7 +321,6 @@ mod tests {
         serde_json::from_value(new_event_val).unwrap()
     }
 }
-
 
 #[test]
 fn thread_safe_test() {

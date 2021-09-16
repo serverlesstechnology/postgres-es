@@ -11,8 +11,8 @@
 
 ```toml
 [dependencies]
-postgres-es = "0.1.1"
-cqrs-es = "0.1.1"
+postgres-es = "0.1.2"
+cqrs-es = "0.1.2"
 ```
 
 ## Usage
@@ -26,12 +26,15 @@ let cqrs = postgres_es::postgres_cqrs(connection, vec![Box::new(my_query)])
 
 ## Change log
 
+#### `v0.1.2`
+Require queries to also use Send & Sync.
+
 #### `v0.1.1`
 Use r2d2_postgres crate to support `Send + Sync` for multi-threaded applications.
 
 ## TODOs
 - Add support for TLS.
-- Some additional framework around `GenericQueryRepository` to simplify event replay.
+- Additional framework around `GenericQueryRepository` to simplify event replay.
 
 ## Demo
 A demo application [is available here](https://github.com/serverlesstechnology/cqrs-demo).

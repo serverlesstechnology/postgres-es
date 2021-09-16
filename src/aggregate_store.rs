@@ -1,20 +1,18 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-use cqrs_es::{Aggregate, AggregateContext, AggregateError, EventEnvelope, EventStore};
 use crate::connection::Connection;
+use cqrs_es::{Aggregate, AggregateContext, AggregateError, EventEnvelope, EventStore};
 
 /// Storage engine using an Postgres backing and relying on a serialization of the aggregate rather
 /// than individual events. This is similar to the "snapshot strategy" seen in many CQRS
 /// frameworks.
-pub struct PostgresSnapshotStore<A: Aggregate>
-{
+pub struct PostgresSnapshotStore<A: Aggregate> {
     conn: Connection,
     _phantom: PhantomData<A>,
 }
 
-impl<A: Aggregate> PostgresSnapshotStore<A>
-{
+impl<A: Aggregate> PostgresSnapshotStore<A> {
     /// Creates a new `PostgresSnapshotStore` from the provided database connection.
     pub fn new(conn: Connection) -> Self {
         PostgresSnapshotStore {
@@ -24,13 +22,15 @@ impl<A: Aggregate> PostgresSnapshotStore<A>
     }
 }
 
-static INSERT_EVENT: &str = "INSERT INTO events (aggregate_type, aggregate_id, sequence, payload, metadata)
+static INSERT_EVENT: &str =
+    "INSERT INTO events (aggregate_type, aggregate_id, sequence, payload, metadata)
                                VALUES ($1, $2, $3, $4, $5)";
 static SELECT_EVENTS: &str = "SELECT aggregate_type, aggregate_id, sequence, payload, metadata
                                 FROM events
                                 WHERE aggregate_type = $1 AND aggregate_id = $2 ORDER BY sequence";
 
-static INSERT_SNAPSHOT: &str = "INSERT INTO snapshots (aggregate_type, aggregate_id, last_sequence, payload)
+static INSERT_SNAPSHOT: &str =
+    "INSERT INTO snapshots (aggregate_type, aggregate_id, last_sequence, payload)
                                VALUES ($1, $2, $3, $4)";
 static UPDATE_SNAPSHOT: &str = "UPDATE snapshots
                                SET last_sequence= $3 , payload= $4
@@ -39,7 +39,8 @@ static SELECT_SNAPSHOT: &str = "SELECT aggregate_type, aggregate_id, last_sequen
                                 FROM snapshots
                                 WHERE aggregate_type = $1 AND aggregate_id = $2";
 
-impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>> for PostgresSnapshotStore<A>
+impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>>
+    for PostgresSnapshotStore<A>
 {
     fn load(&self, aggregate_id: &str) -> Vec<EventEnvelope<A>> {
         let agg_type = A::aggregate_type();
@@ -73,42 +74,45 @@ impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>> for P
         let agg_type = A::aggregate_type();
         let mut conn = self.conn.conn();
         match conn.query(SELECT_SNAPSHOT, &[&agg_type, &aggregate_id.to_string()]) {
-            Ok(rows) => {
-                match rows.get(0) {
-                    None => {
-                        let current_sequence = 0;
-                        PostgresSnapshotStoreAggregateContext {
-                            aggregate_id: aggregate_id.to_string(),
-                            aggregate: A::default(),
-                            current_sequence,
-                        }
-                    }
-                    Some(row) => {
-                        let s: i64 = row.get("last_sequence");
-                        let val: String = row.get("payload");
-                        let aggregate = serde_json::from_str(&val).unwrap();
-                        PostgresSnapshotStoreAggregateContext {
-                            aggregate_id: aggregate_id.to_string(),
-                            aggregate,
-                            current_sequence: s as usize,
-                        }
+            Ok(rows) => match rows.get(0) {
+                None => {
+                    let current_sequence = 0;
+                    PostgresSnapshotStoreAggregateContext {
+                        aggregate_id: aggregate_id.to_string(),
+                        aggregate: A::default(),
+                        current_sequence,
                     }
                 }
-            }
+                Some(row) => {
+                    let s: i64 = row.get("last_sequence");
+                    let val: String = row.get("payload");
+                    let aggregate = serde_json::from_str(&val).unwrap();
+                    PostgresSnapshotStoreAggregateContext {
+                        aggregate_id: aggregate_id.to_string(),
+                        aggregate,
+                        current_sequence: s as usize,
+                    }
+                }
+            },
             Err(e) => {
                 panic!("{:?}", e);
             }
         }
     }
 
-    fn commit(&self, events: Vec<A::Event>, context: PostgresSnapshotStoreAggregateContext<A>, metadata: HashMap<String, String>) -> Result<Vec<EventEnvelope<A>>, AggregateError> {
+    fn commit(
+        &self,
+        events: Vec<A::Event>,
+        context: PostgresSnapshotStoreAggregateContext<A>,
+        metadata: HashMap<String, String>,
+    ) -> Result<Vec<EventEnvelope<A>>, AggregateError> {
         let mut updated_aggregate = context.aggregate_copy();
         let aggregate_id = context.aggregate_id.as_str();
         let current_sequence = context.current_sequence;
         let wrapped_events = self.wrap_events(aggregate_id, current_sequence, events, metadata);
         let mut conn = self.conn.conn();
         let trans = match conn.transaction() {
-            Ok(t) => { t }
+            Ok(t) => t,
             Err(err) => {
                 return Err(AggregateError::TechnicalError(err.to_string()));
             }
@@ -122,24 +126,35 @@ impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>> for P
             let payload = match serde_json::to_string(&event.payload) {
                 Ok(payload) => payload,
                 Err(err) => {
-                    panic!("bad payload found in events table for aggregate id {} with error: {}", &id, err);
+                    panic!(
+                        "bad payload found in events table for aggregate id {} with error: {}",
+                        &id, err
+                    );
                 }
             };
             let metadata = match serde_json::to_string(&event.metadata) {
                 Ok(metadata) => metadata,
                 Err(err) => {
-                    panic!("bad metadata found in events table for aggregate id {} with error: {}", &id, err);
+                    panic!(
+                        "bad metadata found in events table for aggregate id {} with error: {}",
+                        &id, err
+                    );
                 }
             };
             let mut conn = self.conn.conn();
-            match conn.execute(INSERT_EVENT, &[&agg_type, &id, &sequence, &payload, &metadata]) {
+            match conn.execute(
+                INSERT_EVENT,
+                &[&agg_type, &id, &sequence, &payload, &metadata],
+            ) {
                 Ok(_) => {}
                 Err(err) => {
                     match err.code() {
                         None => {}
                         Some(state) => {
                             if state.code() == "23505" {
-                                return Err(AggregateError::TechnicalError("optimistic lock error".to_string()));
+                                return Err(AggregateError::TechnicalError(
+                                    "optimistic lock error".to_string(),
+                                ));
                             }
                         }
                     }
@@ -153,19 +168,28 @@ impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>> for P
         let aggregate_payload = match serde_json::to_string(&updated_aggregate) {
             Ok(val) => val,
             Err(err) => {
-                panic!("bad metadata found in events table for aggregate id {} with error: {}", &aggregate_id, err);
+                panic!(
+                    "bad metadata found in events table for aggregate id {} with error: {}",
+                    &aggregate_id, err
+                );
             }
         };
         let mut conn = self.conn.conn();
         if context.current_sequence == 0 {
-            match conn.execute(INSERT_SNAPSHOT, &[&agg_type, &aggregate_id, &last_sequence, &aggregate_payload]) {
+            match conn.execute(
+                INSERT_SNAPSHOT,
+                &[&agg_type, &aggregate_id, &last_sequence, &aggregate_payload],
+            ) {
                 Ok(_) => {}
                 Err(err) => {
                     panic!("unable to insert snapshot for aggregate id {} with error: {}\n  and payload: {}", &aggregate_id, err, &aggregate_payload);
                 }
             };
         } else {
-            match conn.execute(UPDATE_SNAPSHOT, &[&agg_type, &aggregate_id, &last_sequence, &aggregate_payload]) {
+            match conn.execute(
+                UPDATE_SNAPSHOT,
+                &[&agg_type, &aggregate_id, &last_sequence, &aggregate_payload],
+            ) {
                 Ok(_) => {}
                 Err(err) => {
                     panic!("unable to update snapshot for aggregate id {} with error: {}\n  and payload: {}", &aggregate_id, err, &aggregate_payload);
@@ -180,10 +204,10 @@ impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>> for P
     }
 }
 
-
 /// Holds context for a pure event store implementation for MemStore
 pub struct PostgresSnapshotStoreAggregateContext<A>
-    where A: Aggregate
+where
+    A: Aggregate,
 {
     /// The aggregate ID of the aggregate instance that has been loaded.
     pub aggregate_id: String,
@@ -193,9 +217,9 @@ pub struct PostgresSnapshotStoreAggregateContext<A>
     pub current_sequence: usize,
 }
 
-
 impl<A> AggregateContext<A> for PostgresSnapshotStoreAggregateContext<A>
-    where A: Aggregate
+where
+    A: Aggregate,
 {
     fn aggregate(&self) -> &A {
         &self.aggregate
@@ -203,7 +227,8 @@ impl<A> AggregateContext<A> for PostgresSnapshotStoreAggregateContext<A>
 }
 
 impl<A> PostgresSnapshotStoreAggregateContext<A>
-    where A: Aggregate
+where
+    A: Aggregate,
 {
     pub(crate) fn aggregate_copy(&self) -> A {
         let ser = serde_json::to_value(&self.aggregate).unwrap();

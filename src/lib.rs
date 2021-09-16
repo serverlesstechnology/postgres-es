@@ -15,18 +15,17 @@
 //!
 //! ```toml
 //! [dependencies]
-//! postgres-es = "0.1.1"
-//! cqrs-es = "0.1.1"
+//! postgres-es = "0.1.2"
+//! cqrs-es = "0.1.2"
 //! ```
-pub use crate::store::*;
 pub use crate::aggregate_store::*;
-pub use crate::queries::*;
-pub use crate::cqrs::*;
 pub use crate::connection::*;
+pub use crate::cqrs::*;
+pub use crate::queries::*;
+pub use crate::store::*;
 
-mod store;
-mod queries;
-mod cqrs;
 mod aggregate_store;
 mod connection;
-
+mod cqrs;
+mod queries;
+mod store;
