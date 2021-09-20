@@ -64,7 +64,7 @@ impl<A: Aggregate> EventStore<A, PostgresStoreAggregateContext<A>> for PostgresS
         for envelope in committed_events {
             current_sequence = envelope.sequence;
             let event = envelope.payload;
-            aggregate.apply(&event);
+            aggregate.apply(event);
         }
         PostgresStoreAggregateContext {
             aggregate_id: aggregate_id.to_string(),

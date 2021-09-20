@@ -47,7 +47,7 @@ impl Aggregate for TestAggregate {
         }
     }
 
-    fn apply(&mut self, e: &Self::Event) {
+    fn apply(&mut self, e: Self::Event) {
         match e {
             TestEvent::Created(e) => {
                 self.id = e.id.clone();

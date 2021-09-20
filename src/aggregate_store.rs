@@ -161,7 +161,7 @@ impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>>
                     panic!("unable to insert event table for aggregate id {} with error: {}\n  and payload: {}", &id, err, &payload);
                 }
             };
-            updated_aggregate.apply(&event.payload);
+            updated_aggregate.apply(event.payload);
         }
 
         let agg_type = A::aggregate_type();
