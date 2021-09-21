@@ -11,8 +11,8 @@
 
 ```toml
 [dependencies]
-postgres-es = "0.1.2"
-cqrs-es = "0.1.2"
+postgres-es = "0.1.3"
+cqrs-es = "0.1.3"
 ```
 
 ## Usage
@@ -25,6 +25,9 @@ let cqrs = postgres_es::postgres_cqrs(connection, vec![Box::new(my_query)])
 ```
 
 ## Change log
+
+#### `v0.1.3`
+Aggregates now consume events on `apply`.
 
 #### `v0.1.2`
 Require queries to also use Send & Sync.
