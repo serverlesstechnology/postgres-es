@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
+use async_trait::async_trait;
 
 use crate::connection::Connection;
 use cqrs_es::{Aggregate, AggregateContext, AggregateError, EventEnvelope, EventStore};
@@ -28,8 +29,9 @@ static SELECT_EVENTS: &str = "SELECT aggregate_type, aggregate_id, sequence, pay
                                 FROM events
                                 WHERE aggregate_type = $1 AND aggregate_id = $2 ORDER BY sequence";
 
+#[async_trait]
 impl<A: Aggregate> EventStore<A, PostgresStoreAggregateContext<A>> for PostgresStore<A> {
-    fn load(&self, aggregate_id: &str) -> Vec<EventEnvelope<A>> {
+    async fn load(&self, aggregate_id: &str) -> Vec<EventEnvelope<A>> {
         let agg_type = A::aggregate_type();
         let id = aggregate_id.to_string();
         let mut result = Vec::new();
@@ -57,8 +59,8 @@ impl<A: Aggregate> EventStore<A, PostgresStoreAggregateContext<A>> for PostgresS
         }
         result
     }
-    fn load_aggregate(&self, aggregate_id: &str) -> PostgresStoreAggregateContext<A> {
-        let committed_events = self.load(aggregate_id);
+    async fn load_aggregate(&self, aggregate_id: &str) -> PostgresStoreAggregateContext<A> {
+        let committed_events = self.load(aggregate_id).await;
         let mut aggregate = A::default();
         let mut current_sequence = 0;
         for envelope in committed_events {
@@ -73,7 +75,7 @@ impl<A: Aggregate> EventStore<A, PostgresStoreAggregateContext<A>> for PostgresS
         }
     }
 
-    fn commit(
+    async fn commit(
         &self,
         events: Vec<A::Event>,
         context: PostgresStoreAggregateContext<A>,

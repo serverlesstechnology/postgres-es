@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
+use async_trait::async_trait;
 
 use crate::connection::Connection;
 use cqrs_es::{Aggregate, AggregateContext, AggregateError, EventEnvelope, EventStore};
@@ -39,10 +40,11 @@ static SELECT_SNAPSHOT: &str = "SELECT aggregate_type, aggregate_id, last_sequen
                                 FROM snapshots
                                 WHERE aggregate_type = $1 AND aggregate_id = $2";
 
+#[async_trait]
 impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>>
     for PostgresSnapshotStore<A>
 {
-    fn load(&self, aggregate_id: &str) -> Vec<EventEnvelope<A>> {
+    async fn load(&self, aggregate_id: &str) -> Vec<EventEnvelope<A>> {
         let agg_type = A::aggregate_type();
         let id = aggregate_id.to_string();
         let mut result = Vec::new();
@@ -70,7 +72,7 @@ impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>>
         }
         result
     }
-    fn load_aggregate(&self, aggregate_id: &str) -> PostgresSnapshotStoreAggregateContext<A> {
+    async fn load_aggregate(&self, aggregate_id: &str) -> PostgresSnapshotStoreAggregateContext<A> {
         let agg_type = A::aggregate_type();
         let mut conn = self.conn.conn();
         match conn.query(SELECT_SNAPSHOT, &[&agg_type, &aggregate_id.to_string()]) {
@@ -100,7 +102,7 @@ impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>>
         }
     }
 
-    fn commit(
+    async fn commit(
         &self,
         events: Vec<A::Event>,
         context: PostgresSnapshotStoreAggregateContext<A>,

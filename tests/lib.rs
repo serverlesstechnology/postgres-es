@@ -173,12 +173,12 @@ mod tests {
         let _ps = postgres_cqrs(Connection::new(CONNECTION_STRING), vec![Box::new(query)]);
     }
 
-    #[test]
-    fn commit_and_load_events() {
+    #[tokio::test]
+    async fn commit_and_load_events() {
         let event_store = test_store();
         let id = uuid::Uuid::new_v4().to_string();
-        assert_eq!(0, event_store.load(id.as_str()).len());
-        let context = event_store.load_aggregate(id.as_str());
+        assert_eq!(0, event_store.load(id.as_str()).await.len());
+        let context = event_store.load_aggregate(id.as_str()).await;
 
         event_store
             .commit(
@@ -192,11 +192,11 @@ mod tests {
                 ],
                 context,
                 metadata(),
-            )
+            ).await
             .unwrap();
 
-        assert_eq!(2, event_store.load(id.as_str()).len());
-        let context = event_store.load_aggregate(id.as_str());
+        assert_eq!(2, event_store.load(id.as_str()).await.len());
+        let context = event_store.load_aggregate(id.as_str()).await;
 
         event_store
             .commit(
@@ -205,17 +205,17 @@ mod tests {
                 })],
                 context,
                 metadata(),
-            )
+            ).await
             .unwrap();
-        assert_eq!(3, event_store.load(id.as_str()).len());
+        assert_eq!(3, event_store.load(id.as_str()).await.len());
     }
 
-    #[test]
-    fn commit_and_load_events_snapshot_store() {
+    #[tokio::test]
+    async fn commit_and_load_events_snapshot_store() {
         let event_store = test_snapshot_store();
         let id = uuid::Uuid::new_v4().to_string();
-        assert_eq!(0, event_store.load(id.as_str()).len());
-        let context = event_store.load_aggregate(id.as_str());
+        assert_eq!(0, event_store.load(id.as_str()).await.len());
+        let context = event_store.load_aggregate(id.as_str()).await;
 
         event_store
             .commit(
@@ -229,11 +229,11 @@ mod tests {
                 ],
                 context,
                 metadata(),
-            )
+            ).await
             .unwrap();
 
-        assert_eq!(2, event_store.load(id.as_str()).len());
-        let context = event_store.load_aggregate(id.as_str());
+        assert_eq!(2, event_store.load(id.as_str()).await.len());
+        let context = event_store.load_aggregate(id.as_str()).await;
 
         event_store
             .commit(
@@ -242,18 +242,18 @@ mod tests {
                 })],
                 context,
                 metadata(),
-            )
+            ).await
             .unwrap();
-        assert_eq!(3, event_store.load(id.as_str()).len());
+        assert_eq!(3, event_store.load(id.as_str()).await.len());
     }
 
     // #[test]
     // TODO: test no longer valid, is there a way to cover this elsewhere?
-    fn optimistic_lock_error() {
+    async fn optimistic_lock_error() {
         let event_store = test_store();
         let id = uuid::Uuid::new_v4().to_string();
-        assert_eq!(0, event_store.load(id.as_str()).len());
-        let context = event_store.load_aggregate(id.as_str());
+        assert_eq!(0, event_store.load(id.as_str()).await.len());
+        let context = event_store.load_aggregate(id.as_str()).await;
 
         event_store
             .commit(
@@ -262,17 +262,17 @@ mod tests {
                 })],
                 context,
                 metadata(),
-            )
+            ).await
             .unwrap();
 
-        let context = event_store.load_aggregate(id.as_str());
+        let context = event_store.load_aggregate(id.as_str()).await;
         let result = event_store.commit(
             vec![TestEvent::Tested(Tested {
                 test_name: "test B".to_string(),
             })],
             context,
             metadata(),
-        );
+        ).await;
         match result {
             Ok(_) => {
                 panic!("expected an optimistic lock error")

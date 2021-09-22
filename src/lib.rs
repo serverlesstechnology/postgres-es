@@ -15,8 +15,8 @@
 //!
 //! ```toml
 //! [dependencies]
-//! postgres-es = "0.1.3"
-//! cqrs-es = "0.1.3"
+//! postgres-es = "0.2.0"
+//! cqrs-es = "0.2.0"
 //! ```
 pub use crate::aggregate_store::*;
 pub use crate::connection::*;
