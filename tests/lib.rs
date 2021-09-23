@@ -1,8 +1,9 @@
 use std::sync::{Arc, RwLock};
 
 use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, QueryProcessor};
-use postgres_es::PostgresStore;
 use serde::{Deserialize, Serialize};
+
+use postgres_es::PostgresStore;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TestAggregate {
@@ -138,12 +139,11 @@ mod tests {
     use std::collections::HashMap;
 
     use serde_json::{Map, Value};
+    use sqlx::{Pool, Postgres};
+    use sqlx::postgres::PgPoolOptions;
     use static_assertions::assert_impl_all;
 
-    use postgres_es::{
-        postgres_cqrs, Connection, PostgresSnapshotStore, PostgresStore,
-        PostgresStoreAggregateContext,
-    };
+    use postgres_es::{Connection, EventRepository, postgres_cqrs, PostgresSnapshotStore, PostgresStore, PostgresStoreAggregateContext};
 
     use super::*;
 
@@ -319,6 +319,40 @@ mod tests {
         new_val_map.insert(event_type.to_string(), value);
         let new_event_val = Value::Object(new_val_map);
         serde_json::from_value(new_event_val).unwrap()
+    }
+
+
+    async fn db_pool(connection_string: &str) -> Pool<Postgres> {
+        PgPoolOptions::new()
+            .max_connections(5)
+            .connect(connection_string)
+            .await
+            .expect("unable to connect to database")
+    }
+
+    #[tokio::test]
+    async fn event_repositories() {
+        let pool = db_pool("postgresql://test_user:test_pass@localhost:5432/test").await;
+        let event_repo: EventRepository<TestAggregate> = EventRepository::new(pool.clone());
+        event_repo.get_events("52e1d469-df83-44a6-9ac1-d55838502ef1".to_string()).await.unwrap()
+            .iter()
+            .for_each(|e| println!("{:#?}", e));
+        event_repo.insert_events(vec![
+            EventEnvelope {
+                aggregate_id: "52e1d469-df83-44a6-9ac1-d55838502ef1".to_string(),
+                sequence: 5,
+                aggregate_type: TestAggregate::aggregate_type().to_string(),
+                payload: TestEvent::SomethingElse(SomethingElse { description: "inserting another".to_string() }),
+                metadata: Default::default(),
+            },
+            EventEnvelope {
+                aggregate_id: "52e1d469-df83-44a6-9ac1-d55838502ef1".to_string(),
+                sequence: 3,
+                aggregate_type: TestAggregate::aggregate_type().to_string(),
+                payload: TestEvent::SomethingElse(SomethingElse { description: "this should reject".to_string() }),
+                metadata: Default::default(),
+            }
+        ]).await.unwrap();
     }
 }
 

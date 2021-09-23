@@ -15,10 +15,12 @@ readme = "README.md"
 cqrs-es = {version = "0.2.0", path = "../cqrs"}
 
 async-trait = "0.1.51"
+futures = "0.3.17"
 r2d2_postgres = "0.18.1"
 serde = { version = "1.0.126", features = ["derive"]}
 serde_json = "1.0.64"
-tokio = { version = "1", features = ["macros", "rt"] }
+sqlx = { version = "0.5.7", features = [ "postgres" , "runtime-tokio-rustls", "json"] }
+tokio = { version = "1.12.0", features = ["macros", "rt"] }
 
 [dev-dependencies]
 static_assertions = "0.3"
