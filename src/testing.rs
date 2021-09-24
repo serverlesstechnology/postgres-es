@@ -5,13 +5,12 @@ mod tests {
     use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, Query};
     use serde::{Deserialize, Serialize};
     use serde_json::{Map, Value};
-    use sqlx::postgres::PgPoolOptions;
     use sqlx::{Pool, Postgres};
     use static_assertions::assert_impl_all;
 
     use crate::event_repository::EventRepository;
     use crate::snapshot_repository::SnapshotRepository;
-    use crate::GenericQueryRepository;
+    use crate::{default_postgress_pool, GenericQueryRepository};
     use crate::{
         postgres_cqrs, PostgresSnapshotStore, PostgresSnapshotStoreAggregateContext, PostgresStore,
         PostgresStoreAggregateContext,
@@ -90,15 +89,7 @@ mod tests {
 
     assert_impl_all!(rdbmsstore; PostgresStore::<TestAggregate>, EventStore::<TestAggregate, PostgresStoreAggregateContext<TestAggregate>>);
 
-    const CONNECTION_STRING: &str = "postgresql://test_user:test_pass@localhost:5432/test";
-
-    async fn db_pool(connection_string: &str) -> Pool<Postgres> {
-        PgPoolOptions::new()
-            .max_connections(5)
-            .connect(connection_string)
-            .await
-            .expect("unable to connect to database")
-    }
+    const TEST_CONNECTION_STRING: &str = "postgresql://test_user:test_pass@localhost:5432/test";
 
     async fn test_store(pool: Pool<Postgres>) -> PostgresStore<TestAggregate> {
         PostgresStore::<TestAggregate>::new(pool)
@@ -117,14 +108,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_valid_cqrs_framework() {
-        let pool = db_pool(CONNECTION_STRING).await;
+        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
         let query = TestQueryRepository::new("test_query", pool.clone());
         let _ps = postgres_cqrs(pool, vec![Box::new(query)]);
     }
 
     #[tokio::test]
     async fn query() {
-        let pool = db_pool(CONNECTION_STRING).await;
+        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
         let query = TestQueryRepository::new("test_query", pool.clone());
         let id = uuid::Uuid::new_v4().to_string();
         query
@@ -157,7 +148,7 @@ mod tests {
 
     #[tokio::test]
     async fn commit_and_load_events() {
-        let pool = db_pool(CONNECTION_STRING).await;
+        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
         let event_store = test_store(pool).await;
         let id = uuid::Uuid::new_v4().to_string();
         assert_eq!(0, event_store.load(id.as_str()).await.len());
@@ -197,7 +188,7 @@ mod tests {
 
     #[tokio::test]
     async fn commit_and_load_events_snapshot_store() {
-        let pool = db_pool(CONNECTION_STRING).await;
+        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
         let event_store = test_snapshot_store(pool).await;
         let id = uuid::Uuid::new_v4().to_string();
         assert_eq!(0, event_store.load(id.as_str()).await.len());
@@ -272,7 +263,7 @@ mod tests {
 
     #[tokio::test]
     async fn event_repositories() {
-        let pool = db_pool("postgresql://test_user:test_pass@localhost:5432/test").await;
+        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
         let id = uuid::Uuid::new_v4().to_string();
         let event_repo: EventRepository<TestAggregate> = EventRepository::new(pool.clone());
         let events = event_repo.get_events(&id).await.unwrap();
@@ -332,7 +323,7 @@ mod tests {
 
     #[tokio::test]
     async fn snapshot_repositories() {
-        let pool = db_pool("postgresql://test_user:test_pass@localhost:5432/test").await;
+        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
         let id = uuid::Uuid::new_v4().to_string();
         let repo: SnapshotRepository<TestAggregate> = SnapshotRepository::new(pool.clone());
         let snapshot = repo.get_snapshot(&id).await.unwrap();
