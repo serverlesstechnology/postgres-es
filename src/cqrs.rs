@@ -1,6 +1,6 @@
 use cqrs_es::{Aggregate, CqrsFramework, QueryProcessor};
 
-use crate::aggregate_store::{PostgresSnapshotStore, PostgresSnapshotStoreAggregateContext};
+use crate::snapshot_store::{PostgresSnapshotStore, PostgresSnapshotStoreAggregateContext};
 use crate::{PostgresStore, PostgresStoreAggregateContext, EventRepository, SnapshotRepository};
 
 /// A convenience type for creating a CqrsFramework backed by PostgresStore and using a simple
