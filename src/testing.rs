@@ -5,14 +5,17 @@ mod tests {
     use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, Query};
     use serde::{Deserialize, Serialize};
     use serde_json::{Map, Value};
-    use sqlx::{Pool, Postgres};
     use sqlx::postgres::PgPoolOptions;
+    use sqlx::{Pool, Postgres};
     use static_assertions::assert_impl_all;
 
-    use crate::{postgres_cqrs, PostgresSnapshotStore, PostgresSnapshotStoreAggregateContext, PostgresStore, PostgresStoreAggregateContext};
-    use crate::GenericQueryRepository;
     use crate::event_repository::EventRepository;
     use crate::snapshot_repository::SnapshotRepository;
+    use crate::GenericQueryRepository;
+    use crate::{
+        postgres_cqrs, PostgresSnapshotStore, PostgresSnapshotStoreAggregateContext, PostgresStore,
+        PostgresStoreAggregateContext,
+    };
 
     #[derive(Debug, Serialize, Deserialize, PartialEq)]
     pub struct TestAggregate {
@@ -124,22 +127,30 @@ mod tests {
         let pool = db_pool(CONNECTION_STRING).await;
         let query = TestQueryRepository::new("test_query", pool.clone());
         let id = uuid::Uuid::new_v4().to_string();
-        query.apply_events(&id, &vec![
-            EventEnvelope {
-                aggregate_id: id.clone(),
-                sequence: 1,
-                aggregate_type: TestAggregate::aggregate_type().to_string(),
-                payload: TestEvent::Created(Created { id: id.clone() }),
-                metadata: Default::default(),
-            },
-            EventEnvelope {
-                aggregate_id: id.clone(),
-                sequence: 2,
-                aggregate_type: TestAggregate::aggregate_type().to_string(),
-                payload: TestEvent::Tested(Tested { test_name: "a test was run".to_string() }),
-                metadata: Default::default(),
-            },
-        ]).await.unwrap();
+        query
+            .apply_events(
+                &id,
+                &vec![
+                    EventEnvelope {
+                        aggregate_id: id.clone(),
+                        sequence: 1,
+                        aggregate_type: TestAggregate::aggregate_type().to_string(),
+                        payload: TestEvent::Created(Created { id: id.clone() }),
+                        metadata: Default::default(),
+                    },
+                    EventEnvelope {
+                        aggregate_id: id.clone(),
+                        sequence: 2,
+                        aggregate_type: TestAggregate::aggregate_type().to_string(),
+                        payload: TestEvent::Tested(Tested {
+                            test_name: "a test was run".to_string(),
+                        }),
+                        metadata: Default::default(),
+                    },
+                ],
+            )
+            .await
+            .unwrap();
         let result = query.load(id).await.unwrap();
         assert_eq!(2, result.events.len())
     }
@@ -164,7 +175,8 @@ mod tests {
                 ],
                 context,
                 test_metadata(),
-            ).await
+            )
+            .await
             .unwrap();
 
         assert_eq!(2, event_store.load(id.as_str()).await.len());
@@ -177,7 +189,8 @@ mod tests {
                 })],
                 context,
                 test_metadata(),
-            ).await
+            )
+            .await
             .unwrap();
         assert_eq!(3, event_store.load(id.as_str()).await.len());
     }
@@ -202,7 +215,8 @@ mod tests {
                 ],
                 context,
                 test_metadata(),
-            ).await
+            )
+            .await
             .unwrap();
 
         assert_eq!(2, event_store.load(id.as_str()).await.len());
@@ -215,7 +229,8 @@ mod tests {
                 })],
                 context,
                 test_metadata(),
-            ).await
+            )
+            .await
             .unwrap();
         assert_eq!(3, event_store.load(id.as_str()).await.len());
     }
@@ -263,42 +278,54 @@ mod tests {
         let events = event_repo.get_events(&id).await.unwrap();
         assert!(events.is_empty());
 
-        event_repo.insert_events(vec![
-            EventEnvelope {
-                aggregate_id: id.clone(),
-                sequence: 1,
-                aggregate_type: TestAggregate::aggregate_type().to_string(),
-                payload: TestEvent::Created(Created { id: id.clone() }),
-                metadata: Default::default(),
-            },
-            EventEnvelope {
-                aggregate_id: id.clone(),
-                sequence: 2,
-                aggregate_type: TestAggregate::aggregate_type().to_string(),
-                payload: TestEvent::Tested(Tested { test_name: "a test was run".to_string() }),
-                metadata: Default::default(),
-            },
-        ]).await.unwrap();
+        event_repo
+            .insert_events(vec![
+                EventEnvelope {
+                    aggregate_id: id.clone(),
+                    sequence: 1,
+                    aggregate_type: TestAggregate::aggregate_type().to_string(),
+                    payload: TestEvent::Created(Created { id: id.clone() }),
+                    metadata: Default::default(),
+                },
+                EventEnvelope {
+                    aggregate_id: id.clone(),
+                    sequence: 2,
+                    aggregate_type: TestAggregate::aggregate_type().to_string(),
+                    payload: TestEvent::Tested(Tested {
+                        test_name: "a test was run".to_string(),
+                    }),
+                    metadata: Default::default(),
+                },
+            ])
+            .await
+            .unwrap();
         let events = event_repo.get_events(&id).await.unwrap();
         assert_eq!(2, events.len());
         events.iter().for_each(|e| assert_eq!(&id, &e.aggregate_id));
 
-        event_repo.insert_events(vec![
-            EventEnvelope {
-                aggregate_id: id.clone(),
-                sequence: 3,
-                aggregate_type: TestAggregate::aggregate_type().to_string(),
-                payload: TestEvent::SomethingElse(SomethingElse { description: "this should not persist".to_string() }),
-                metadata: Default::default(),
-            },
-            EventEnvelope {
-                aggregate_id: id.clone(),
-                sequence: 2,
-                aggregate_type: TestAggregate::aggregate_type().to_string(),
-                payload: TestEvent::SomethingElse(SomethingElse { description: "bad sequence number".to_string() }),
-                metadata: Default::default(),
-            },
-        ]).await.unwrap_err();
+        event_repo
+            .insert_events(vec![
+                EventEnvelope {
+                    aggregate_id: id.clone(),
+                    sequence: 3,
+                    aggregate_type: TestAggregate::aggregate_type().to_string(),
+                    payload: TestEvent::SomethingElse(SomethingElse {
+                        description: "this should not persist".to_string(),
+                    }),
+                    metadata: Default::default(),
+                },
+                EventEnvelope {
+                    aggregate_id: id.clone(),
+                    sequence: 2,
+                    aggregate_type: TestAggregate::aggregate_type().to_string(),
+                    payload: TestEvent::SomethingElse(SomethingElse {
+                        description: "bad sequence number".to_string(),
+                    }),
+                    metadata: Default::default(),
+                },
+            ])
+            .await
+            .unwrap_err();
         let events = event_repo.get_events(&id).await.unwrap();
         assert_eq!(2, events.len());
     }
@@ -313,52 +340,101 @@ mod tests {
 
         let test_description = "some test snapshot here".to_string();
         let test_tests = vec!["testA".to_string(), "testB".to_string()];
-        repo.insert(TestAggregate {
-            id: id.clone(),
-            description: test_description.clone(),
-            tests: test_tests.clone(),
-        }, id.clone(), 1, &vec![]).await.unwrap();
+        repo.insert(
+            TestAggregate {
+                id: id.clone(),
+                description: test_description.clone(),
+                tests: test_tests.clone(),
+            },
+            id.clone(),
+            1,
+            &vec![],
+        )
+        .await
+        .unwrap();
         let snapshot = repo.get_snapshot(&id).await.unwrap();
-        assert_eq!(Some(snapshot_context(id.clone(), 0, 1, TestAggregate {
-            id: id.clone(),
-            description: test_description.clone(),
-            tests: test_tests.clone(),
-        })), snapshot);
+        assert_eq!(
+            Some(snapshot_context(
+                id.clone(),
+                0,
+                1,
+                TestAggregate {
+                    id: id.clone(),
+                    description: test_description.clone(),
+                    tests: test_tests.clone(),
+                }
+            )),
+            snapshot
+        );
 
         // sequence iterated, does update
-        repo.update(TestAggregate {
-            id: id.clone(),
-            description: "a test description that should be saved".to_string(),
-            tests: test_tests.clone(),
-        }, id.clone(), 2, &vec![]).await.unwrap();
+        repo.update(
+            TestAggregate {
+                id: id.clone(),
+                description: "a test description that should be saved".to_string(),
+                tests: test_tests.clone(),
+            },
+            id.clone(),
+            2,
+            &vec![],
+        )
+        .await
+        .unwrap();
         let snapshot = repo.get_snapshot(&id).await.unwrap();
-        assert_eq!(Some(snapshot_context(id.clone(), 0, 2, TestAggregate {
-            id: id.clone(),
-            description: "a test description that should be saved".to_string(),
-            tests: test_tests.clone(),
-        })), snapshot);
+        assert_eq!(
+            Some(snapshot_context(
+                id.clone(),
+                0,
+                2,
+                TestAggregate {
+                    id: id.clone(),
+                    description: "a test description that should be saved".to_string(),
+                    tests: test_tests.clone(),
+                }
+            )),
+            snapshot
+        );
 
         // sequence out of order or not iterated, does not update
-        repo.update(TestAggregate {
-            id: id.clone(),
-            description: "a test description that should not be saved".to_string(),
-            tests: test_tests.clone(),
-        }, id.clone(), 2, &vec![]).await.unwrap();
+        repo.update(
+            TestAggregate {
+                id: id.clone(),
+                description: "a test description that should not be saved".to_string(),
+                tests: test_tests.clone(),
+            },
+            id.clone(),
+            2,
+            &vec![],
+        )
+        .await
+        .unwrap();
         let snapshot = repo.get_snapshot(&id).await.unwrap();
-        assert_eq!(Some(snapshot_context(id.clone(), 0, 2, TestAggregate {
-            id: id.clone(),
-            description: "a test description that should be saved".to_string(),
-            tests: test_tests.clone(),
-        })), snapshot);
+        assert_eq!(
+            Some(snapshot_context(
+                id.clone(),
+                0,
+                2,
+                TestAggregate {
+                    id: id.clone(),
+                    description: "a test description that should be saved".to_string(),
+                    tests: test_tests.clone(),
+                }
+            )),
+            snapshot
+        );
     }
 
-    fn snapshot_context<A: Aggregate>(aggregate_id: String, current_sequence: usize, current_snapshot: usize, aggregate: A) -> PostgresSnapshotStoreAggregateContext<A> {
+    fn snapshot_context<A: Aggregate>(
+        aggregate_id: String,
+        current_sequence: usize,
+        current_snapshot: usize,
+        aggregate: A,
+    ) -> PostgresSnapshotStoreAggregateContext<A> {
         PostgresSnapshotStoreAggregateContext {
             aggregate_id,
             aggregate,
             current_sequence,
-            current_snapshot
+            current_snapshot,
         }
     }
-
 }

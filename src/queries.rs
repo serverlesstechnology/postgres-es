@@ -1,13 +1,13 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
+use crate::error::PostgresAggregateError;
 use async_trait::async_trait;
 use cqrs_es::{Aggregate, AggregateError, EventEnvelope, Query, QueryProcessor};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use sqlx::{Postgres, Pool, Row};
 use sqlx::postgres::PgRow;
-use crate::error::PostgresAggregateError;
+use sqlx::{Pool, Postgres, Row};
 
 /// This provides a simple query repository that can be used both to return deserialized
 /// views and to act as a query processor.
@@ -55,7 +55,10 @@ where
         self.query_name.to_string()
     }
 
-    async fn load_mut(&self, query_instance_id: String) -> Result<(V, QueryContext<V>), PostgresAggregateError> {
+    async fn load_mut(
+        &self,
+        query_instance_id: String,
+    ) -> Result<(V, QueryContext<V>), PostgresAggregateError> {
         let query = format!(
             "SELECT version,payload FROM {} WHERE query_instance_id= $1",
             &self.query_name
@@ -91,7 +94,11 @@ where
     }
 
     /// Used to apply committed events to a view.
-    pub async fn apply_events(&self, query_instance_id: &str, events: &[EventEnvelope<A>]) -> Result<(),PostgresAggregateError> {
+    pub async fn apply_events(
+        &self,
+        query_instance_id: &str,
+        events: &[EventEnvelope<A>],
+    ) -> Result<(), PostgresAggregateError> {
         let (mut view, view_context) = self.load_mut(query_instance_id.to_string()).await?;
         for event in events {
             view.update(event);
@@ -112,7 +119,6 @@ where
         self.handle_error(error.into());
     }
 
-
     /// Loads and deserializes a view based on the view id.
     pub async fn load(&self, query_instance_id: String) -> Option<V> {
         let query = format!(
@@ -128,7 +134,7 @@ where
             Err(e) => {
                 self.handle_internal_error(e.into());
                 return None;
-            },
+            }
         };
         match row_option {
             Some(row) => self.deser_view(row),
@@ -155,7 +161,10 @@ where
     A: Aggregate,
 {
     async fn dispatch(&self, query_instance_id: &str, events: &[EventEnvelope<A>]) {
-        match self.apply_events(&query_instance_id.to_string(), events).await {
+        match self
+            .apply_events(&query_instance_id.to_string(), events)
+            .await
+        {
             Ok(_) => {}
             Err(err) => self.handle_internal_error(err),
         };
@@ -176,7 +185,7 @@ impl<V> QueryContext<V>
 where
     V: Debug + Default + Serialize + DeserializeOwned + Default,
 {
-    async fn commit(&self, pool: Pool<Postgres>, view: V) -> Result<(),PostgresAggregateError>{
+    async fn commit(&self, pool: Pool<Postgres>, view: V) -> Result<(), PostgresAggregateError> {
         let sql = match self.version {
             0 => format!(
                 "INSERT INTO {} (payload, version, query_instance_id) VALUES ( $1, $2, $3 )",
@@ -193,7 +202,8 @@ where
             .bind(payload)
             .bind(&version)
             .bind(&self.query_instance_id)
-            .execute(&pool).await?;
+            .execute(&pool)
+            .await?;
         Ok(())
     }
 }

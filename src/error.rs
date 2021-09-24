@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 
-use sqlx::Error;
 use cqrs_es::AggregateError;
+use sqlx::Error;
 
 #[derive(Debug, PartialEq)]
 pub struct PostgresAggregateError(String);

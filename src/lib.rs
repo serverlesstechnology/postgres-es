@@ -18,16 +18,16 @@
 //! postgres-es = "0.2.0"
 //! cqrs-es = "0.2.0"
 //! ```
-pub use crate::snapshot_store::*;
 pub use crate::cqrs::*;
-pub use crate::queries::*;
 pub use crate::event_store::*;
+pub use crate::queries::*;
+pub use crate::snapshot_store::*;
 
-mod snapshot_store;
 mod cqrs;
-mod queries;
-mod event_store;
-mod event_repository;
 mod error;
+mod event_repository;
+mod event_store;
+mod queries;
 mod snapshot_repository;
+mod snapshot_store;
 mod testing;

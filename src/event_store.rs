@@ -1,10 +1,10 @@
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use async_trait::async_trait;
 
-use cqrs_es::{Aggregate, AggregateContext, EventEnvelope, EventStore, AggregateError};
-use sqlx::{Pool, Postgres};
 use crate::event_repository::EventRepository;
+use cqrs_es::{Aggregate, AggregateContext, AggregateError, EventEnvelope, EventStore};
+use sqlx::{Pool, Postgres};
 
 /// Storage engine using an Postgres backing. This is the only persistent store currently
 /// provided.
@@ -32,7 +32,7 @@ impl<A: Aggregate> EventStore<A, PostgresStoreAggregateContext<A>> for PostgresS
             Err(_err) => {
                 // TODO: improved error handling
                 Default::default()
-            },
+            }
         }
     }
     async fn load_aggregate(&self, aggregate_id: &str) -> PostgresStoreAggregateContext<A> {

@@ -4,9 +4,9 @@ use std::marker::PhantomData;
 use async_trait::async_trait;
 use cqrs_es::{Aggregate, AggregateContext, AggregateError, EventEnvelope, EventStore};
 
-use sqlx::{Pool, Postgres};
-use crate::snapshot_repository::SnapshotRepository;
 use crate::event_repository::EventRepository;
+use crate::snapshot_repository::SnapshotRepository;
+use sqlx::{Pool, Postgres};
 
 /// Storage engine using an Postgres backing and relying on a serialization of the aggregate rather
 /// than individual events. This is similar to the "snapshot strategy" seen in many CQRS
@@ -33,7 +33,7 @@ impl<A: Aggregate> PostgresSnapshotStore<A> {
 
 #[async_trait]
 impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>>
-for PostgresSnapshotStore<A>
+    for PostgresSnapshotStore<A>
 {
     async fn load(&self, aggregate_id: &str) -> Vec<EventEnvelope<A>> {
         // TODO: combine with store
@@ -42,7 +42,7 @@ for PostgresSnapshotStore<A>
             Err(_err) => {
                 // TODO: improved error handling
                 Default::default()
-            },
+            }
         }
     }
     async fn load_aggregate(&self, aggregate_id: &str) -> PostgresSnapshotStoreAggregateContext<A> {
@@ -51,17 +51,17 @@ for PostgresSnapshotStore<A>
                 Some(snapshot) => {
                     let _tmp = serde_json::to_string(&snapshot.aggregate).unwrap();
                     snapshot
-                },
-                None => {
-                    PostgresSnapshotStoreAggregateContext {
-                        aggregate_id: aggregate_id.to_string(),
-                        aggregate: Default::default(),
-                        current_sequence: 0,
-                        current_snapshot: 0,
-                    }
                 }
+                None => PostgresSnapshotStoreAggregateContext {
+                    aggregate_id: aggregate_id.to_string(),
+                    aggregate: Default::default(),
+                    current_sequence: 0,
+                    current_snapshot: 0,
+                },
+            },
+            Err(e) => {
+                panic!("{}", e);
             }
-            Err(e) => { panic!("{}", e); }
         }
     }
 
@@ -75,12 +75,22 @@ for PostgresSnapshotStore<A>
             context.aggregate.apply(event);
         }
         let aggregate_id = context.aggregate_id.clone();
-        let wrapped_events = self.wrap_events(&aggregate_id, context.current_sequence, events, metadata);
+        let wrapped_events =
+            self.wrap_events(&aggregate_id, context.current_sequence, events, metadata);
 
         if context.current_sequence == 0 {
-            self.repo.insert(context.aggregate, aggregate_id, 1, &wrapped_events).await?;
+            self.repo
+                .insert(context.aggregate, aggregate_id, 1, &wrapped_events)
+                .await?;
         } else {
-            self.repo.update(context.aggregate, aggregate_id, context.current_snapshot + 1, &wrapped_events).await?;
+            self.repo
+                .update(
+                    context.aggregate,
+                    aggregate_id,
+                    context.current_snapshot + 1,
+                    &wrapped_events,
+                )
+                .await?;
         }
 
         Ok(wrapped_events)
@@ -90,8 +100,8 @@ for PostgresSnapshotStore<A>
 /// Holds context for a pure event store implementation for MemStore
 #[derive(Debug, PartialEq)]
 pub struct PostgresSnapshotStoreAggregateContext<A>
-    where
-        A: Aggregate,
+where
+    A: Aggregate,
 {
     /// The aggregate ID of the aggregate instance that has been loaded.
     pub aggregate_id: String,
@@ -104,8 +114,8 @@ pub struct PostgresSnapshotStoreAggregateContext<A>
 }
 
 impl<A> AggregateContext<A> for PostgresSnapshotStoreAggregateContext<A>
-    where
-        A: Aggregate,
+where
+    A: Aggregate,
 {
     fn aggregate(&self) -> &A {
         &self.aggregate

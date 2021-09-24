@@ -1,16 +1,17 @@
 use std::marker::PhantomData;
 
+use crate::error::PostgresAggregateError;
 use cqrs_es::{Aggregate, EventEnvelope};
 use futures::TryStreamExt;
-use sqlx::{Pool, Postgres, Transaction};
 use sqlx::postgres::PgRow;
 use sqlx::Row;
-use crate::error::PostgresAggregateError;
+use sqlx::{Pool, Postgres, Transaction};
 
 pub(crate) static INSERT_EVENT: &str =
     "INSERT INTO events (aggregate_type, aggregate_id, sequence, payload, metadata)
                                VALUES ($1, $2, $3, $4, $5)";
-pub(crate) static SELECT_EVENTS: &str = "SELECT aggregate_type, aggregate_id, sequence, payload, metadata
+pub(crate) static SELECT_EVENTS: &str =
+    "SELECT aggregate_type, aggregate_id, sequence, payload, metadata
                                 FROM events
                                 WHERE aggregate_type = $1 AND aggregate_id = $2 ORDER BY sequence";
 
@@ -20,13 +21,19 @@ pub(crate) struct EventRepository<A> {
 }
 
 impl<A> EventRepository<A>
-    where A: Aggregate
+where
+    A: Aggregate,
 {
     pub(crate) fn new(pool: Pool<Postgres>) -> Self {
-        Self { pool, _phantom: Default::default() }
+        Self {
+            pool,
+            _phantom: Default::default(),
+        }
     }
-    pub(crate) async fn get_events(&self, aggregate_id: &str) -> Result<Vec<EventEnvelope<A>>, PostgresAggregateError>
-    {
+    pub(crate) async fn get_events(
+        &self,
+        aggregate_id: &str,
+    ) -> Result<Vec<EventEnvelope<A>>, PostgresAggregateError> {
         let mut rows = sqlx::query(SELECT_EVENTS)
             .bind(A::aggregate_type())
             .bind(&aggregate_id)
@@ -37,7 +44,10 @@ impl<A> EventRepository<A>
         }
         Ok(result)
     }
-    pub(crate) async fn insert_events(&self, events: Vec<EventEnvelope<A>>) -> Result<(), PostgresAggregateError> {
+    pub(crate) async fn insert_events(
+        &self,
+        events: Vec<EventEnvelope<A>>,
+    ) -> Result<(), PostgresAggregateError> {
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
         for event in events {
             let payload = serde_json::to_string(&event.payload)?;
@@ -48,7 +58,8 @@ impl<A> EventRepository<A>
                 .bind(event.sequence as u32)
                 .bind(&payload)
                 .bind(&metadata)
-                .execute(&mut tx).await?;
+                .execute(&mut tx)
+                .await?;
         }
         tx.commit().await?;
         Ok(())
@@ -64,9 +75,17 @@ impl<A> EventRepository<A>
         let payload: A::Event = match serde_json::from_str(row.get("payload")) {
             Ok(payload) => payload,
             Err(err) => {
-                panic!("bad payload found in events table for aggregate id {} with error: {}", aggregate_id, err);
+                panic!(
+                    "bad payload found in events table for aggregate id {} with error: {}",
+                    aggregate_id, err
+                );
             }
         };
-        Ok(EventEnvelope::new(aggregate_id, sequence, aggregate_type, payload))
+        Ok(EventEnvelope::new(
+            aggregate_id,
+            sequence,
+            aggregate_type,
+            payload,
+        ))
     }
 }

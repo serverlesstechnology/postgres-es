@@ -2,7 +2,7 @@ use cqrs_es::{Aggregate, CqrsFramework, QueryProcessor};
 
 use crate::snapshot_store::{PostgresSnapshotStore, PostgresSnapshotStoreAggregateContext};
 use crate::{PostgresStore, PostgresStoreAggregateContext};
-use sqlx::{Postgres, Pool};
+use sqlx::{Pool, Postgres};
 
 /// A convenience type for creating a CqrsFramework backed by PostgresStore and using a simple
 /// metadata supplier with time of commit.
