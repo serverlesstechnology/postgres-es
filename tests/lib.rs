@@ -255,45 +255,6 @@ mod tests {
         // assert_eq!(3, event_store.load(id.as_str()).await.len());
     }
 
-    // #[test]
-    // TODO: test no longer valid, is there a way to cover this elsewhere?
-    async fn optimistic_lock_error() {
-        let event_store = test_store().await;
-        let id = uuid::Uuid::new_v4().to_string();
-        assert_eq!(0, event_store.load(id.as_str()).await.len());
-        let context = event_store.load_aggregate(id.as_str()).await;
-
-        event_store
-            .commit(
-                vec![TestEvent::Created(Created {
-                    id: "test_event_A".to_string(),
-                })],
-                context,
-                metadata(),
-            ).await
-            .unwrap();
-
-        let context = event_store.load_aggregate(id.as_str()).await;
-        let result = event_store.commit(
-            vec![TestEvent::Tested(Tested {
-                test_name: "test B".to_string(),
-            })],
-            context,
-            metadata(),
-        ).await;
-        match result {
-            Ok(_) => {
-                panic!("expected an optimistic lock error")
-            }
-            Err(e) => {
-                assert_eq!(
-                    e,
-                    cqrs_es::AggregateError::TechnicalError("optimistic lock error".to_string())
-                );
-            }
-        };
-    }
-
     #[test]
     fn test_event_breakout_type() {
         let event = TestEvent::Created(Created {
@@ -400,9 +361,9 @@ mod tests {
             id: id.clone(),
             description: test_description.clone(),
             tests: test_tests.clone(),
-        }, id.clone(), 1, 1).await.unwrap();
+        }, id.clone(), 1, &vec![]).await.unwrap();
         let snapshot = repo.get_snapshot(&id).await.unwrap();
-        assert_eq!(Some(PostgresSnapshotStoreAggregateContext::new(id.clone(), 1, 1, TestAggregate {
+        assert_eq!(Some(PostgresSnapshotStoreAggregateContext::new(id.clone(), 0, 1, TestAggregate {
             id: id.clone(),
             description: test_description.clone(),
             tests: test_tests.clone(),
@@ -413,9 +374,9 @@ mod tests {
             id: id.clone(),
             description: "a test description that should be saved".to_string(),
             tests: test_tests.clone(),
-        }, id.clone(), 2, 2).await.unwrap();
+        }, id.clone(), 2, &vec![]).await.unwrap();
         let snapshot = repo.get_snapshot(&id).await.unwrap();
-        assert_eq!(Some(PostgresSnapshotStoreAggregateContext::new(id.clone(), 2, 2, TestAggregate {
+        assert_eq!(Some(PostgresSnapshotStoreAggregateContext::new(id.clone(), 0, 2, TestAggregate {
             id: id.clone(),
             description: "a test description that should be saved".to_string(),
             tests: test_tests.clone(),
@@ -426,9 +387,9 @@ mod tests {
             id: id.clone(),
             description: "a test description that should not be saved".to_string(),
             tests: test_tests.clone(),
-        }, id.clone(), 2, 2).await.unwrap();
+        }, id.clone(), 2, &vec![]).await.unwrap();
         let snapshot = repo.get_snapshot(&id).await.unwrap();
-        assert_eq!(Some(PostgresSnapshotStoreAggregateContext::new(id.clone(), 2, 2, TestAggregate {
+        assert_eq!(Some(PostgresSnapshotStoreAggregateContext::new(id.clone(), 0, 2, TestAggregate {
             id: id.clone(),
             description: "a test description that should be saved".to_string(),
             tests: test_tests.clone(),

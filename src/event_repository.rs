@@ -7,10 +7,10 @@ use sqlx::postgres::PgRow;
 use sqlx::Row;
 use crate::error::PostgresAggregateError;
 
-static INSERT_EVENT: &str =
+pub(crate) static INSERT_EVENT: &str =
     "INSERT INTO events (aggregate_type, aggregate_id, sequence, payload, metadata)
                                VALUES ($1, $2, $3, $4, $5)";
-static SELECT_EVENTS: &str = "SELECT aggregate_type, aggregate_id, sequence, payload, metadata
+pub(crate) static SELECT_EVENTS: &str = "SELECT aggregate_type, aggregate_id, sequence, payload, metadata
                                 FROM events
                                 WHERE aggregate_type = $1 AND aggregate_id = $2 ORDER BY sequence";
 

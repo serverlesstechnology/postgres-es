@@ -24,20 +24,7 @@ impl<A: Aggregate> PostgresSnapshotStore<A> {
             _phantom: PhantomData,
         }
     }
-    fn peek_at_last_sequence(events: &Vec<EventEnvelope<A>>) -> usize {
-        match events.get(events.len() - 1) {
-            None => 0,
-            Some(event) => event.sequence,
-        }
-    }
 }
-
-static INSERT_EVENT: &str =
-    "INSERT INTO events (aggregate_type, aggregate_id, sequence, payload, metadata)
-                               VALUES ($1, $2, $3, $4, $5)";
-static SELECT_EVENTS: &str = "SELECT aggregate_type, aggregate_id, sequence, payload, metadata
-                                FROM events
-                                WHERE aggregate_type = $1 AND aggregate_id = $2 ORDER BY sequence";
 
 #[async_trait]
 impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>>
@@ -84,15 +71,12 @@ for PostgresSnapshotStore<A>
         }
         let aggregate_id = context.aggregate_id.clone();
         let wrapped_events = self.wrap_events(&aggregate_id, context.current_sequence, events, metadata);
-        self.event_repo.insert_events(wrapped_events.clone()).await?;
-        let last_sequence = PostgresSnapshotStore::peek_at_last_sequence(&wrapped_events);
 
         if context.current_sequence == 0 {
-            self.repo.insert(context.aggregate, aggregate_id, last_sequence, 1).await?;
+            self.repo.insert(context.aggregate, aggregate_id, 1, &wrapped_events).await?;
         } else {
-            self.repo.update(context.aggregate, aggregate_id, last_sequence, context.current_snapshot + 1).await?;
+            self.repo.update(context.aggregate, aggregate_id, context.current_snapshot + 1, &wrapped_events).await?;
         }
-
 
         Ok(wrapped_events)
     }
@@ -134,9 +118,5 @@ impl<A> PostgresSnapshotStoreAggregateContext<A>
             current_sequence,
             current_snapshot
         }
-    }
-    pub(crate) fn aggregate_copy(&self) -> A {
-        let ser = serde_json::to_value(&self.aggregate).unwrap();
-        serde_json::from_value(ser).unwrap()
     }
 }
