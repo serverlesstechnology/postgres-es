@@ -5,6 +5,7 @@ use futures::TryStreamExt;
 use sqlx::{Pool, Postgres, Transaction};
 use sqlx::postgres::PgRow;
 use sqlx::Row;
+use crate::error::PostgresAggregateError;
 
 static INSERT_EVENT: &str =
     "INSERT INTO events (aggregate_type, aggregate_id, sequence, payload, metadata)
@@ -24,7 +25,7 @@ impl<A> EventRepository<A>
     pub fn new(pool: Pool<Postgres>) -> Self {
         Self { pool, _phantom: Default::default() }
     }
-    pub async fn get_events(&self, aggregate_id: String) -> Result<Vec<EventEnvelope<A>>, sqlx::Error>
+    pub async fn get_events(&self, aggregate_id: &str) -> Result<Vec<EventEnvelope<A>>, PostgresAggregateError>
     {
         let mut rows = sqlx::query(SELECT_EVENTS)
             .bind(A::aggregate_type())
@@ -36,10 +37,11 @@ impl<A> EventRepository<A>
         }
         Ok(result)
     }
-    pub async fn insert_events(&self, events: Vec<EventEnvelope<A>>) -> Result<(), sqlx::Error> {
+    pub async fn insert_events(&self, events: Vec<EventEnvelope<A>>) -> Result<(), PostgresAggregateError> {
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
         for event in events {
-            let (payload, metadata) = self.ser_payload(&event);
+            let payload = serde_json::to_string(&event.payload)?;
+            let metadata = serde_json::to_string(&event.metadata)?;
             sqlx::query(INSERT_EVENT)
                 .bind(A::aggregate_type())
                 .bind(event.aggregate_id.as_str())
@@ -52,7 +54,7 @@ impl<A> EventRepository<A>
         Ok(())
     }
 
-    fn deser_event(&self, row: PgRow) -> Result<EventEnvelope<A>, sqlx::Error> {
+    fn deser_event(&self, row: PgRow) -> Result<EventEnvelope<A>, PostgresAggregateError> {
         let aggregate_type: String = row.get("aggregate_type");
         let aggregate_id: String = row.get("aggregate_id");
         let sequence = {
@@ -66,10 +68,5 @@ impl<A> EventRepository<A>
             }
         };
         Ok(EventEnvelope::new(aggregate_id, sequence, aggregate_type, payload))
-    }
-    fn ser_payload(&self, event: &EventEnvelope<A>) -> (String, String) {
-        let payload = serde_json::to_string(&event.payload).expect("unable to serialize payload");
-        let metadata = serde_json::to_string(&event.metadata).expect("unable to serialize payload");
-        (payload, metadata)
     }
 }

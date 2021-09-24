@@ -24,6 +24,7 @@ pub use crate::cqrs::*;
 pub use crate::queries::*;
 pub use crate::store::*;
 pub use crate::event_repository::*;
+pub use crate::snapshot_repository::*;
 
 mod aggregate_store;
 mod connection;
@@ -31,3 +32,5 @@ mod cqrs;
 mod queries;
 mod store;
 mod event_repository;
+mod error;
+mod snapshot_repository;
