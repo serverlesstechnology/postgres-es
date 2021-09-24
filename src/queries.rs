@@ -1,10 +1,13 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-use crate::connection::Connection;
+use async_trait::async_trait;
 use cqrs_es::{Aggregate, AggregateError, EventEnvelope, Query, QueryProcessor};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use sqlx::{Postgres, Pool, Row};
+use sqlx::postgres::PgRow;
+use crate::error::PostgresAggregateError;
 
 /// This provides a simple query repository that can be used both to return deserialized
 /// views and to act as a query processor.
@@ -13,7 +16,7 @@ where
     V: Query<A>,
     A: Aggregate,
 {
-    conn: Connection,
+    pool: Pool<Postgres>,
     query_name: String,
     error_handler: Option<Box<ErrorHandler>>,
     _phantom: PhantomData<(V, A)>,
@@ -30,17 +33,18 @@ where
     /// identically to the `query_name` value provided. This table should be created by the user
     /// previously (see `/db/init.sql`).
     #[must_use]
-    pub fn new(query_name: &str, conn: Connection) -> Self {
+    pub fn new(query_name: &str, pool: Pool<Postgres>) -> Self {
         GenericQueryRepository {
-            conn,
+            pool,
             query_name: query_name.to_string(),
             error_handler: None,
             _phantom: PhantomData,
         }
     }
     /// Allows the user to apply a custom error handler to the query.
-    /// Queries _should_ never cause errors, but programming errors or other technical problems
-    /// could and this is where the user should log or otherwise register the issue.
+    /// Queries are infallible and _should_ never cause errors,
+    /// but programming errors or other technical problems
+    /// could, and this is where the user should log or otherwise register the issue.
     pub fn with_error_handler(&mut self, error_handler: Box<ErrorHandler>) {
         self.error_handler = Some(error_handler);
     }
@@ -51,22 +55,25 @@ where
         self.query_name.to_string()
     }
 
-    fn load_mut(&self, query_instance_id: String) -> Result<(V, QueryContext<V>), AggregateError> {
+    async fn load_mut(&self, query_instance_id: String) -> Result<(V, QueryContext<V>), PostgresAggregateError> {
         let query = format!(
             "SELECT version,payload FROM {} WHERE query_instance_id= $1",
             &self.query_name
         );
-        let result = match self
-            .conn
-            .conn()
-            .query(query.as_str(), &[&query_instance_id])
-        {
-            Ok(result) => result,
-            Err(e) => {
-                return Err(AggregateError::new(e.to_string().as_str()));
+        let row: Option<PgRow> = sqlx::query(&query)
+            .bind(&query_instance_id)
+            .fetch_optional(&self.pool)
+            .await?;
+        match row {
+            None => {
+                let view_context = QueryContext {
+                    query_name: self.query_name.clone(),
+                    query_instance_id,
+                    version: 0,
+                    _phantom: PhantomData,
+                };
+                Ok((Default::default(), view_context))
             }
-        };
-        match result.get(0) {
             Some(row) => {
                 let view_name = self.query_name.clone();
                 let version = row.get("version");
@@ -80,83 +87,78 @@ where
                 };
                 Ok((view, view_context))
             }
-            None => {
-                let view_context = QueryContext {
-                    query_name: self.query_name.clone(),
-                    query_instance_id,
-                    version: 0,
-                    _phantom: PhantomData,
-                };
-                Ok((Default::default(), view_context))
-            }
         }
     }
 
     /// Used to apply committed events to a view.
-    pub fn apply_events(&self, query_instance_id: &str, events: &[EventEnvelope<A>]) {
-        match self.load_mut(query_instance_id.to_string()) {
-            Ok((mut view, view_context)) => {
-                for event in events {
-                    view.update(event);
-                }
-                view_context.commit(&self.conn, view);
-            }
-            Err(e) => match &self.error_handler {
-                None => {}
-                Some(handler) => {
-                    (handler)(e);
-                }
-            },
-        };
+    pub async fn apply_events(&self, query_instance_id: &str, events: &[EventEnvelope<A>]) -> Result<(),PostgresAggregateError> {
+        let (mut view, view_context) = self.load_mut(query_instance_id.to_string()).await?;
+        for event in events {
+            view.update(event);
+        }
+        view_context.commit(self.pool.clone(), view).await?;
+        Ok(())
     }
 
+    fn handle_error(&self, error: AggregateError) {
+        match &self.error_handler {
+            None => {}
+            Some(handler) => {
+                (handler)(error.into());
+            }
+        }
+    }
+    fn handle_internal_error(&self, error: PostgresAggregateError) {
+        self.handle_error(error.into());
+    }
+
+
     /// Loads and deserializes a view based on the view id.
-    pub fn load(&self, query_instance_id: String) -> Option<V> {
+    pub async fn load(&self, query_instance_id: String) -> Option<V> {
         let query = format!(
             "SELECT version,payload FROM {} WHERE query_instance_id= $1",
             &self.query_name
         );
-        let result = match self
-            .conn
-            .conn()
-            .query(query.as_str(), &[&query_instance_id])
+        let row_option: Option<PgRow> = match sqlx::query(&query)
+            .bind(&query_instance_id)
+            .fetch_optional(&self.pool)
+            .await
         {
             Ok(result) => result,
-            Err(err) => {
-                panic!(
-                    "unable to load view '{}' with id: '{}', encountered: {}",
-                    &query_instance_id, &self.query_name, err
-                );
-            }
+            Err(e) => {
+                self.handle_internal_error(e.into());
+                return None;
+            },
         };
-        match result.get(0) {
-            Some(row) => {
-                let payload = row.get("payload");
-                match serde_json::from_str(payload) {
-                    Ok(view) => Some(view),
-                    Err(e) => {
-                        match &self.error_handler {
-                            None => {}
-                            Some(handler) => {
-                                (handler)(e.into());
-                            }
-                        }
-                        None
-                    }
-                }
-            }
+        match row_option {
+            Some(row) => self.deser_view(row),
             None => None,
+        }
+    }
+
+    fn deser_view(&self, row: PgRow) -> Option<V> {
+        let payload = row.get("payload");
+        match serde_json::from_str(payload) {
+            Ok(view) => Some(view),
+            Err(e) => {
+                self.handle_internal_error(e.into());
+                None
+            }
         }
     }
 }
 
+#[async_trait]
 impl<Q, A> QueryProcessor<A> for GenericQueryRepository<Q, A>
 where
     Q: Query<A> + Send + Sync + 'static,
     A: Aggregate,
 {
-    fn dispatch(&self, query_instance_id: &str, events: &[EventEnvelope<A>]) {
-        self.apply_events(&query_instance_id.to_string(), events);
+    async fn dispatch(&self, query_instance_id: &str, events: &[EventEnvelope<A>]) {
+        match self.apply_events(&query_instance_id.to_string(), events).await {
+            Ok(_) => {}
+            Err(err) => self.handle_internal_error(err),
+        };
     }
 }
 
@@ -174,7 +176,7 @@ impl<V> QueryContext<V>
 where
     V: Debug + Default + Serialize + DeserializeOwned + Default,
 {
-    fn commit(&self, conn: &Connection, view: V) {
+    async fn commit(&self, pool: Pool<Postgres>, view: V) -> Result<(),PostgresAggregateError>{
         let sql = match self.version {
             0 => format!(
                 "INSERT INTO {} (payload, version, query_instance_id) VALUES ( $1, $2, $3 )",
@@ -186,27 +188,12 @@ where
             ),
         };
         let version = self.version + 1;
-        // let query_instance_id = &self.query_instance_id;
-        let payload = match serde_json::to_string(&view) {
-            Ok(payload) => payload,
-            Err(err) => {
-                panic!(
-                    "unable to covert view '{}' with id: '{}', to value: {}\n  view: {:?}",
-                    &self.query_instance_id, &self.query_name, err, &view
-                );
-            }
-        };
-        match conn
-            .conn()
-            .execute(sql.as_str(), &[&payload, &version, &self.query_instance_id])
-        {
-            Ok(_) => {}
-            Err(err) => {
-                panic!(
-                    "unable to update view '{}' with id: '{}', encountered: {}",
-                    &self.query_instance_id, &self.query_name, err
-                );
-            }
-        };
+        let payload = serde_json::to_string(&view).expect("failed to serialize view");
+        sqlx::query(sql.as_str())
+            .bind(payload)
+            .bind(&version)
+            .bind(&self.query_instance_id)
+            .execute(&pool).await?;
+        Ok(())
     }
 }

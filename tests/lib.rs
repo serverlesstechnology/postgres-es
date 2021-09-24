@@ -1,9 +1,8 @@
-use std::sync::{Arc, RwLock};
 
-use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, QueryProcessor};
+use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, Query};
 use serde::{Deserialize, Serialize};
 
-use postgres_es::PostgresStore;
+use postgres_es::{GenericQueryRepository};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct TestAggregate {
@@ -113,22 +112,16 @@ pub struct DoSomethingElse {
     pub description: String,
 }
 
+type TestQueryRepository = GenericQueryRepository<TestQuery,TestAggregate>;
+
+#[derive(Debug,Default, Serialize,Deserialize)]
 struct TestQuery {
-    events: Arc<RwLock<Vec<EventEnvelope<TestAggregate>>>>,
+    events: Vec<TestEvent>,
 }
 
-impl TestQuery {
-    fn new(events: Arc<RwLock<Vec<EventEnvelope<TestAggregate>>>>) -> Self {
-        TestQuery { events }
-    }
-}
-
-impl QueryProcessor<TestAggregate> for TestQuery {
-    fn dispatch(&self, _aggregate_id: &str, events: &[EventEnvelope<TestAggregate>]) {
-        for event in events {
-            let mut event_list = self.events.write().unwrap();
-            event_list.push(event.clone());
-        }
+impl Query<TestAggregate> for TestQuery {
+    fn update(&mut self, event: &EventEnvelope<TestAggregate>) {
+        self.events.push(event.payload.clone());
     }
 }
 
@@ -151,39 +144,73 @@ mod tests {
 
     const CONNECTION_STRING: &str = "postgresql://test_user:test_pass@localhost:5432/test";
 
-    fn metadata() -> HashMap<String, String> {
+    async fn db_pool(connection_string: &str) -> Pool<Postgres> {
+        PgPoolOptions::new()
+            .max_connections(5)
+            .connect(connection_string)
+            .await
+            .expect("unable to connect to database")
+    }
+
+    async fn test_event_repo(pool: Pool<Postgres>) -> EventRepository<TestAggregate> {
+        EventRepository::new(pool)
+    }
+
+    async fn test_snapshot_repo(pool: Pool<Postgres>) -> SnapshotRepository<TestAggregate> {
+        SnapshotRepository::new(pool)
+    }
+
+    async fn test_store(pool: Pool<Postgres>) -> PostgresStore<TestAggregate> {
+        PostgresStore::<TestAggregate>::new(test_event_repo(pool).await)
+    }
+
+    async fn test_snapshot_store(pool: Pool<Postgres>) -> PostgresSnapshotStore<TestAggregate> {
+        PostgresSnapshotStore::<TestAggregate>::new(test_snapshot_repo(pool.clone()).await, test_event_repo(pool).await)
+    }
+
+    fn test_metadata() -> HashMap<String, String> {
         let now = "2021-03-18T12:32:45.930Z".to_string();
         let mut metadata = HashMap::new();
         metadata.insert("time".to_string(), now);
         metadata
     }
 
-    async fn test_event_repo() -> EventRepository<TestAggregate> {
-        EventRepository::new(db_pool(CONNECTION_STRING).await)
-    }
-
-    async fn test_snapshot_repo() -> SnapshotRepository<TestAggregate> {
-        SnapshotRepository::new(db_pool(CONNECTION_STRING).await)
-    }
-
-    async fn test_store() -> PostgresStore<TestAggregate> {
-        PostgresStore::<TestAggregate>::new(test_event_repo().await)
-    }
-
-    async fn test_snapshot_store() -> PostgresSnapshotStore<TestAggregate> {
-        PostgresSnapshotStore::<TestAggregate>::new(test_snapshot_repo().await, test_event_repo().await)
+    #[tokio::test]
+    async fn test_valid_cqrs_framework() {
+        let pool = db_pool(CONNECTION_STRING).await;
+        let query = TestQueryRepository::new("test_query", pool.clone());
+        let _ps = postgres_cqrs(test_event_repo(pool.clone()).await, vec![Box::new(query)]);
     }
 
     #[tokio::test]
-    async fn test_valid_cqrs_framework() {
-        let view_events: Arc<RwLock<Vec<EventEnvelope<TestAggregate>>>> = Default::default();
-        let query = TestQuery::new(view_events);
-        let _ps = postgres_cqrs(test_event_repo().await, vec![Box::new(query)]);
+    async fn query() {
+        let pool = db_pool(CONNECTION_STRING).await;
+        let query = TestQueryRepository::new("test_query", pool.clone());
+        let id = uuid::Uuid::new_v4().to_string();
+        query.apply_events(&id, &vec![
+            EventEnvelope {
+                aggregate_id: id.clone(),
+                sequence: 1,
+                aggregate_type: TestAggregate::aggregate_type().to_string(),
+                payload: TestEvent::Created(Created { id: id.clone() }),
+                metadata: Default::default(),
+            },
+            EventEnvelope {
+                aggregate_id: id.clone(),
+                sequence: 2,
+                aggregate_type: TestAggregate::aggregate_type().to_string(),
+                payload: TestEvent::Tested(Tested { test_name: "a test was run".to_string() }),
+                metadata: Default::default(),
+            },
+        ]).await.unwrap();
+        let result = query.load(id).await.unwrap();
+        assert_eq!(2, result.events.len())
     }
 
     #[tokio::test]
     async fn commit_and_load_events() {
-        let event_store = test_store().await;
+        let pool = db_pool(CONNECTION_STRING).await;
+        let event_store = test_store(pool).await;
         let id = uuid::Uuid::new_v4().to_string();
         assert_eq!(0, event_store.load(id.as_str()).await.len());
         let context = event_store.load_aggregate(id.as_str()).await;
@@ -199,7 +226,7 @@ mod tests {
                     }),
                 ],
                 context,
-                metadata(),
+                test_metadata(),
             ).await
             .unwrap();
 
@@ -212,7 +239,7 @@ mod tests {
                     test_name: "test B".to_string(),
                 })],
                 context,
-                metadata(),
+                test_metadata(),
             ).await
             .unwrap();
         assert_eq!(3, event_store.load(id.as_str()).await.len());
@@ -220,7 +247,8 @@ mod tests {
 
     #[tokio::test]
     async fn commit_and_load_events_snapshot_store() {
-        let event_store = test_snapshot_store().await;
+        let pool = db_pool(CONNECTION_STRING).await;
+        let event_store = test_snapshot_store(pool).await;
         let id = uuid::Uuid::new_v4().to_string();
         assert_eq!(0, event_store.load(id.as_str()).await.len());
         let context = event_store.load_aggregate(id.as_str()).await;
@@ -236,7 +264,7 @@ mod tests {
                     }),
                 ],
                 context,
-                metadata(),
+                test_metadata(),
             ).await
             .unwrap();
 
@@ -249,10 +277,10 @@ mod tests {
                     test_name: "test B".to_string(),
                 })],
                 context,
-                metadata(),
+                test_metadata(),
             ).await
             .unwrap();
-        // assert_eq!(3, event_store.load(id.as_str()).await.len());
+        assert_eq!(3, event_store.load(id.as_str()).await.len());
     }
 
     #[test]
@@ -288,15 +316,6 @@ mod tests {
         new_val_map.insert(event_type.to_string(), value);
         let new_event_val = Value::Object(new_val_map);
         serde_json::from_value(new_event_val).unwrap()
-    }
-
-
-    async fn db_pool(connection_string: &str) -> Pool<Postgres> {
-        PgPoolOptions::new()
-            .max_connections(5)
-            .connect(connection_string)
-            .await
-            .expect("unable to connect to database")
     }
 
     #[tokio::test]
@@ -395,14 +414,5 @@ mod tests {
             tests: test_tests.clone(),
         })), snapshot);
     }
-}
 
-#[test]
-fn thread_safe_test() {
-    // TODO: use R2D2 for sync/send
-    // https://github.com/sfackler/r2d2-postgres
-    // fn is_sync<T: Sync>() {}
-    // is_sync::<PostgresStore<TestAggregate>>();
-    fn is_send<T: Send>() {}
-    is_send::<PostgresStore<TestAggregate>>();
 }

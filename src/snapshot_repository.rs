@@ -36,7 +36,8 @@ impl<A> SnapshotRepository<A>
             .fetch_optional(&self.pool)
             .await? {
             Some(row) => row,
-            None => { return Ok(None); }
+            None => { return Ok(None);
+            }
         };
         Ok(Some(self.deser_snapshot(row)?))
     }
