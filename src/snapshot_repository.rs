@@ -17,7 +17,7 @@ static SELECT_SNAPSHOT: &str = "SELECT aggregate_type, aggregate_id, last_sequen
                                 FROM snapshots
                                 WHERE aggregate_type = $1 AND aggregate_id = $2";
 
-pub struct SnapshotRepository<A> {
+pub(crate) struct SnapshotRepository<A> {
     pool: Pool<Postgres>,
     _phantom: PhantomData<A>,
 }
@@ -25,10 +25,10 @@ pub struct SnapshotRepository<A> {
 impl<A> SnapshotRepository<A>
     where A: Aggregate
 {
-    pub fn new(pool: Pool<Postgres>) -> Self {
+    pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         Self { pool, _phantom: Default::default() }
     }
-    pub async fn get_snapshot(&self, aggregate_id: &str) -> Result<Option<PostgresSnapshotStoreAggregateContext<A>>, PostgresAggregateError>
+    pub(crate) async fn get_snapshot(&self, aggregate_id: &str) -> Result<Option<PostgresSnapshotStoreAggregateContext<A>>, PostgresAggregateError>
     {
         let row: PgRow = match sqlx::query(SELECT_SNAPSHOT)
             .bind(A::aggregate_type())
@@ -42,7 +42,7 @@ impl<A> SnapshotRepository<A>
         Ok(Some(self.deser_snapshot(row)?))
     }
 
-    pub async fn insert(&self, aggregate: A, aggregate_id: String, current_snapshot: usize, events: &Vec<EventEnvelope<A>>) -> Result<(), PostgresAggregateError> {
+    pub(crate) async fn insert(&self, aggregate: A, aggregate_id: String, current_snapshot: usize, events: &[EventEnvelope<A>]) -> Result<(), PostgresAggregateError> {
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
         let mut current_sequence: usize = 0;
         for event in events {
@@ -70,7 +70,7 @@ impl<A> SnapshotRepository<A>
         Ok(())
     }
 
-    pub async fn update(&self, aggregate: A, aggregate_id: String, current_snapshot: usize, events: &Vec<EventEnvelope<A>>) -> Result<(), PostgresAggregateError> {
+    pub(crate) async fn update(&self, aggregate: A, aggregate_id: String, current_snapshot: usize, events: &[EventEnvelope<A>]) -> Result<(), PostgresAggregateError> {
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
         let mut current_sequence: usize = 0;
         for event in events {

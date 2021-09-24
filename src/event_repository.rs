@@ -14,7 +14,7 @@ pub(crate) static SELECT_EVENTS: &str = "SELECT aggregate_type, aggregate_id, se
                                 FROM events
                                 WHERE aggregate_type = $1 AND aggregate_id = $2 ORDER BY sequence";
 
-pub struct EventRepository<A> {
+pub(crate) struct EventRepository<A> {
     pool: Pool<Postgres>,
     _phantom: PhantomData<A>,
 }
@@ -22,10 +22,10 @@ pub struct EventRepository<A> {
 impl<A> EventRepository<A>
     where A: Aggregate
 {
-    pub fn new(pool: Pool<Postgres>) -> Self {
+    pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         Self { pool, _phantom: Default::default() }
     }
-    pub async fn get_events(&self, aggregate_id: &str) -> Result<Vec<EventEnvelope<A>>, PostgresAggregateError>
+    pub(crate) async fn get_events(&self, aggregate_id: &str) -> Result<Vec<EventEnvelope<A>>, PostgresAggregateError>
     {
         let mut rows = sqlx::query(SELECT_EVENTS)
             .bind(A::aggregate_type())
@@ -37,7 +37,7 @@ impl<A> EventRepository<A>
         }
         Ok(result)
     }
-    pub async fn insert_events(&self, events: Vec<EventEnvelope<A>>) -> Result<(), PostgresAggregateError> {
+    pub(crate) async fn insert_events(&self, events: Vec<EventEnvelope<A>>) -> Result<(), PostgresAggregateError> {
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
         for event in events {
             let payload = serde_json::to_string(&event.payload)?;

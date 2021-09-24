@@ -104,7 +104,7 @@ where
         match &self.error_handler {
             None => {}
             Some(handler) => {
-                (handler)(error.into());
+                (handler)(error);
             }
         }
     }

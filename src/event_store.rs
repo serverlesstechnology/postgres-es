@@ -3,7 +3,8 @@ use std::marker::PhantomData;
 use async_trait::async_trait;
 
 use cqrs_es::{Aggregate, AggregateContext, EventEnvelope, EventStore, AggregateError};
-use crate::EventRepository;
+use sqlx::{Pool, Postgres};
+use crate::event_repository::EventRepository;
 
 /// Storage engine using an Postgres backing. This is the only persistent store currently
 /// provided.
@@ -14,7 +15,8 @@ pub struct PostgresStore<A: Aggregate + Send + Sync> {
 
 impl<A: Aggregate> PostgresStore<A> {
     /// Creates a new `PostgresStore` from the provided database connection.
-    pub fn new(repo: EventRepository<A>,) -> Self {
+    pub fn new(pool: Pool<Postgres>) -> Self {
+        let repo = EventRepository::new(pool);
         PostgresStore {
             repo,
             _phantom: PhantomData,
@@ -63,7 +65,7 @@ impl<A: Aggregate> EventStore<A, PostgresStoreAggregateContext<A>> for PostgresS
     }
 }
 
-/// Holds context for a pure event store implementation for MemStore
+/// Holds context for a pure event store implementation for PostgresStore
 pub struct PostgresStoreAggregateContext<A: Aggregate> {
     /// The aggregate ID of the aggregate instance that has been loaded.
     pub aggregate_id: String,

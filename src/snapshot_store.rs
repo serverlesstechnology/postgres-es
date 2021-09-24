@@ -4,20 +4,25 @@ use std::marker::PhantomData;
 use async_trait::async_trait;
 use cqrs_es::{Aggregate, AggregateContext, AggregateError, EventEnvelope, EventStore};
 
-use crate::{EventRepository, SnapshotRepository};
+use sqlx::{Pool, Postgres};
+use crate::snapshot_repository::SnapshotRepository;
+use crate::event_repository::EventRepository;
 
 /// Storage engine using an Postgres backing and relying on a serialization of the aggregate rather
 /// than individual events. This is similar to the "snapshot strategy" seen in many CQRS
 /// frameworks.
 pub struct PostgresSnapshotStore<A: Aggregate> {
     repo: SnapshotRepository<A>,
+    // TODO: combine event retrieval and remove EventRepository here
     event_repo: EventRepository<A>,
     _phantom: PhantomData<A>,
 }
 
 impl<A: Aggregate> PostgresSnapshotStore<A> {
     /// Creates a new `PostgresSnapshotStore` from the provided database connection.
-    pub fn new(repo: SnapshotRepository<A>, event_repo: EventRepository<A>) -> Self {
+    pub fn new(pool: Pool<Postgres>) -> Self {
+        let repo = SnapshotRepository::new(pool.clone());
+        let event_repo = EventRepository::new(pool);
         PostgresSnapshotStore {
             repo,
             event_repo,
@@ -104,19 +109,5 @@ impl<A> AggregateContext<A> for PostgresSnapshotStoreAggregateContext<A>
 {
     fn aggregate(&self) -> &A {
         &self.aggregate
-    }
-}
-
-impl<A> PostgresSnapshotStoreAggregateContext<A>
-    where
-        A: Aggregate,
-{
-    pub fn new(aggregate_id: String, current_sequence: usize, current_snapshot: usize, aggregate: A) -> Self {
-        Self {
-            aggregate_id,
-            aggregate,
-            current_sequence,
-            current_snapshot
-        }
     }
 }

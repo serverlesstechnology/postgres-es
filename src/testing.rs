@@ -1,144 +1,89 @@
-
-use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, Query};
-use serde::{Deserialize, Serialize};
-
-use postgres_es::{GenericQueryRepository};
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct TestAggregate {
-    id: String,
-    description: String,
-    tests: Vec<String>,
-}
-
-impl Aggregate for TestAggregate {
-    type Command = TestCommand;
-    type Event = TestEvent;
-
-    fn aggregate_type() -> &'static str {
-        "TestAggregate"
-    }
-
-    fn handle(&self, command: Self::Command) -> Result<Vec<Self::Event>, AggregateError> {
-        match command {
-            TestCommand::CreateTest(command) => {
-                let event = TestEvent::Created(Created {
-                    id: command.id.to_string(),
-                });
-                Ok(vec![event])
-            }
-            TestCommand::ConfirmTest(command) => {
-                for test in &self.tests {
-                    if test == &command.test_name {
-                        return Err(AggregateError::new("test already performed"));
-                    }
-                }
-                let event = TestEvent::Tested(Tested {
-                    test_name: command.test_name,
-                });
-                Ok(vec![event])
-            }
-            TestCommand::DoSomethingElse(command) => {
-                let event = TestEvent::SomethingElse(SomethingElse {
-                    description: command.description.clone(),
-                });
-                Ok(vec![event])
-            }
-        }
-    }
-
-    fn apply(&mut self, e: Self::Event) {
-        match e {
-            TestEvent::Created(e) => {
-                self.id = e.id.clone();
-            }
-            TestEvent::Tested(e) => self.tests.push(e.test_name.clone()),
-            TestEvent::SomethingElse(e) => {
-                self.description = e.description.clone();
-            }
-        }
-    }
-}
-
-impl Default for TestAggregate {
-    fn default() -> Self {
-        TestAggregate {
-            id: "".to_string(),
-            description: "".to_string(),
-            tests: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub enum TestEvent {
-    Created(Created),
-    Tested(Tested),
-    SomethingElse(SomethingElse),
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub struct Created {
-    pub id: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub struct Tested {
-    pub test_name: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub struct SomethingElse {
-    pub description: String,
-}
-
-impl DomainEvent for TestEvent {}
-
-pub enum TestCommand {
-    CreateTest(CreateTest),
-    ConfirmTest(ConfirmTest),
-    DoSomethingElse(DoSomethingElse),
-}
-
-pub struct CreateTest {
-    pub id: String,
-}
-
-pub struct ConfirmTest {
-    pub test_name: String,
-}
-
-pub struct DoSomethingElse {
-    pub description: String,
-}
-
-type TestQueryRepository = GenericQueryRepository<TestQuery,TestAggregate>;
-
-#[derive(Debug,Default, Serialize,Deserialize)]
-struct TestQuery {
-    events: Vec<TestEvent>,
-}
-
-impl Query<TestAggregate> for TestQuery {
-    fn update(&mut self, event: &EventEnvelope<TestAggregate>) {
-        self.events.push(event.payload.clone());
-    }
-}
-
-pub type TestEventEnvelope = EventEnvelope<TestAggregate>;
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
+    use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, Query};
+    use serde::{Deserialize, Serialize};
     use serde_json::{Map, Value};
     use sqlx::{Pool, Postgres};
     use sqlx::postgres::PgPoolOptions;
     use static_assertions::assert_impl_all;
 
-    use postgres_es::{EventRepository, postgres_cqrs, PostgresSnapshotStore, PostgresSnapshotStoreAggregateContext, PostgresStore, PostgresStoreAggregateContext, SnapshotRepository};
+    use crate::{postgres_cqrs, PostgresSnapshotStore, PostgresSnapshotStoreAggregateContext, PostgresStore, PostgresStoreAggregateContext};
+    use crate::GenericQueryRepository;
+    use crate::event_repository::EventRepository;
+    use crate::snapshot_repository::SnapshotRepository;
 
-    use super::*;
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    pub struct TestAggregate {
+        id: String,
+        description: String,
+        tests: Vec<String>,
+    }
+
+    impl Aggregate for TestAggregate {
+        type Command = TestCommand;
+        type Event = TestEvent;
+
+        fn aggregate_type() -> &'static str {
+            "TestAggregate"
+        }
+
+        fn handle(&self, _command: Self::Command) -> Result<Vec<Self::Event>, AggregateError> {
+            Ok(vec![])
+        }
+
+        fn apply(&mut self, _e: Self::Event) {}
+    }
+
+    impl Default for TestAggregate {
+        fn default() -> Self {
+            TestAggregate {
+                id: "".to_string(),
+                description: "".to_string(),
+                tests: Vec::new(),
+            }
+        }
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+    pub enum TestEvent {
+        Created(Created),
+        Tested(Tested),
+        SomethingElse(SomethingElse),
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+    pub struct Created {
+        pub id: String,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+    pub struct Tested {
+        pub test_name: String,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+    pub struct SomethingElse {
+        pub description: String,
+    }
+
+    impl DomainEvent for TestEvent {}
+
+    pub enum TestCommand {}
+
+    type TestQueryRepository = GenericQueryRepository<TestQuery, TestAggregate>;
+
+    #[derive(Debug, Default, Serialize, Deserialize)]
+    struct TestQuery {
+        events: Vec<TestEvent>,
+    }
+
+    impl Query<TestAggregate> for TestQuery {
+        fn update(&mut self, event: &EventEnvelope<TestAggregate>) {
+            self.events.push(event.payload.clone());
+        }
+    }
 
     assert_impl_all!(rdbmsstore; PostgresStore::<TestAggregate>, EventStore::<TestAggregate, PostgresStoreAggregateContext<TestAggregate>>);
 
@@ -152,20 +97,12 @@ mod tests {
             .expect("unable to connect to database")
     }
 
-    async fn test_event_repo(pool: Pool<Postgres>) -> EventRepository<TestAggregate> {
-        EventRepository::new(pool)
-    }
-
-    async fn test_snapshot_repo(pool: Pool<Postgres>) -> SnapshotRepository<TestAggregate> {
-        SnapshotRepository::new(pool)
-    }
-
     async fn test_store(pool: Pool<Postgres>) -> PostgresStore<TestAggregate> {
-        PostgresStore::<TestAggregate>::new(test_event_repo(pool).await)
+        PostgresStore::<TestAggregate>::new(pool)
     }
 
     async fn test_snapshot_store(pool: Pool<Postgres>) -> PostgresSnapshotStore<TestAggregate> {
-        PostgresSnapshotStore::<TestAggregate>::new(test_snapshot_repo(pool.clone()).await, test_event_repo(pool).await)
+        PostgresSnapshotStore::<TestAggregate>::new(pool)
     }
 
     fn test_metadata() -> HashMap<String, String> {
@@ -179,7 +116,7 @@ mod tests {
     async fn test_valid_cqrs_framework() {
         let pool = db_pool(CONNECTION_STRING).await;
         let query = TestQueryRepository::new("test_query", pool.clone());
-        let _ps = postgres_cqrs(test_event_repo(pool.clone()).await, vec![Box::new(query)]);
+        let _ps = postgres_cqrs(pool, vec![Box::new(query)]);
     }
 
     #[tokio::test]
@@ -382,7 +319,7 @@ mod tests {
             tests: test_tests.clone(),
         }, id.clone(), 1, &vec![]).await.unwrap();
         let snapshot = repo.get_snapshot(&id).await.unwrap();
-        assert_eq!(Some(PostgresSnapshotStoreAggregateContext::new(id.clone(), 0, 1, TestAggregate {
+        assert_eq!(Some(snapshot_context(id.clone(), 0, 1, TestAggregate {
             id: id.clone(),
             description: test_description.clone(),
             tests: test_tests.clone(),
@@ -395,7 +332,7 @@ mod tests {
             tests: test_tests.clone(),
         }, id.clone(), 2, &vec![]).await.unwrap();
         let snapshot = repo.get_snapshot(&id).await.unwrap();
-        assert_eq!(Some(PostgresSnapshotStoreAggregateContext::new(id.clone(), 0, 2, TestAggregate {
+        assert_eq!(Some(snapshot_context(id.clone(), 0, 2, TestAggregate {
             id: id.clone(),
             description: "a test description that should be saved".to_string(),
             tests: test_tests.clone(),
@@ -408,11 +345,20 @@ mod tests {
             tests: test_tests.clone(),
         }, id.clone(), 2, &vec![]).await.unwrap();
         let snapshot = repo.get_snapshot(&id).await.unwrap();
-        assert_eq!(Some(PostgresSnapshotStoreAggregateContext::new(id.clone(), 0, 2, TestAggregate {
+        assert_eq!(Some(snapshot_context(id.clone(), 0, 2, TestAggregate {
             id: id.clone(),
             description: "a test description that should be saved".to_string(),
             tests: test_tests.clone(),
         })), snapshot);
+    }
+
+    fn snapshot_context<A: Aggregate>(aggregate_id: String, current_sequence: usize, current_snapshot: usize, aggregate: A) -> PostgresSnapshotStoreAggregateContext<A> {
+        PostgresSnapshotStoreAggregateContext {
+            aggregate_id,
+            aggregate,
+            current_sequence,
+            current_snapshot
+        }
     }
 
 }

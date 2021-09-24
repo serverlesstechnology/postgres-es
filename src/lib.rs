@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// #![deny(missing_docs)]
+#![deny(missing_docs)]
 #![deny(clippy::all)]
 // #![warn(clippy::pedantic)]
 //! # postgres-es
@@ -19,18 +19,15 @@
 //! cqrs-es = "0.2.0"
 //! ```
 pub use crate::snapshot_store::*;
-pub use crate::connection::*;
 pub use crate::cqrs::*;
 pub use crate::queries::*;
 pub use crate::event_store::*;
-pub use crate::event_repository::*;
-pub use crate::snapshot_repository::*;
 
 mod snapshot_store;
-mod connection;
 mod cqrs;
 mod queries;
 mod event_store;
 mod event_repository;
 mod error;
 mod snapshot_repository;
+mod testing;
