@@ -9,8 +9,8 @@ use serde::Serialize;
 use sqlx::postgres::PgRow;
 use sqlx::{Pool, Postgres, Row};
 
-/// A simple query and view repository. This is used both to act as a Query for processing events
-/// and to return deserialized views.
+/// A simple query and view repository. This is used both to act as a `Query` for processing events
+/// and to return materialized views.
 pub struct GenericQuery<V, A>
 where
     V: View<A>,
@@ -25,7 +25,7 @@ where
 type ErrorHandler = dyn Fn(AggregateError) + Send + Sync + 'static;
 
 // mod doc {
-//     use crate::{GenericQueryRepository, PostgresStore};
+//     use crate::{GenericQuery, PostgresStore};
 //     use cqrs_es::{Aggregate, AggregateError, CqrsFramework, DomainEvent, EventEnvelope, View};
 //     use serde::de::DeserializeOwned;
 //     use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -82,8 +82,8 @@ type ErrorHandler = dyn Fn(AggregateError) + Send + Sync + 'static;
 //     fn test() {}
 //     async fn configure_me(pool: Pool<Postgres>) {
 //         let mut query_repository =
-//             GenericQueryRepository::<MyQuery, MyAggregate>::new("my-query", pool.clone());
-//         query_repository.with_error_handler(Box::new(|e| panic!("{}", e)));
+//             GenericQuery::<MyView, MyAggregate>::new("my-query", pool.clone());
+//         query_repository.use_error_handler(Box::new(|e| panic!("{}", e)));
 //         let query = query_repository.load("customer-B24DA0".to_string()).await;
 //
 //         let store = PostgresStore::<MyAggregate>::new(pool);
@@ -95,14 +95,14 @@ where
     V: View<A>,
     A: Aggregate,
 {
-    /// Creates a new `GenericQueryRepository` that will store its' views in the table named
+    /// Creates a new `GenericQuery` that will store serialized views in a Postgres table named
     /// identically to the `query_name` value provided. This table should be created by the user
     /// before using this query repository (see `/db/init.sql` sql initialization file).
     ///
     /// ```ignore
-    /// let query_repository = GenericQueryRepository::<MyQuery,MyAggregate>::new("my-query", pool);
-    /// let store = PostgresStore::<MyAggregate>::new(pool);
-    /// let cqrs = CqrsFramework::new(store, vec![Box::new(query_repository)]);
+    /// let query = GenericQuery::<MyView, MyAggregate>::new("my_query", pool.clone());
+    /// let store = ...
+    /// let cqrs = CqrsFramework::new(store, vec![Box::new(query)]);
     /// ```
     #[must_use]
     pub fn new(query_name: &str, pool: Pool<Postgres>) -> Self {
@@ -116,16 +116,18 @@ where
     /// Allows the user to apply a custom error handler to the query.
     /// Queries are infallible and _should_ never cause errors,
     /// but programming errors or other technical problems
-    /// could, and this is where the user should log or otherwise register the issue.
+    /// might. Adding an error handler allows the user to choose whether to
+    /// panic the application, log the error or otherwise register the issue.
     ///
     /// This is not required for usage but without an error handler any error encountered
-    /// by the query repository will simply be ignored.
+    /// by the query repository will simply be ignored,
+    /// so it is *strongly* recommended.
     ///
     /// _An error handler that panics on any error._
     /// ```ignore
-    /// query_repository.with_error_handler(Box::new(|e|panic!("{}",e)));
+    /// query.use_error_handler(Box::new(|e|panic!("{}",e)));
     /// ```
-    pub fn with_error_handler(&mut self, error_handler: Box<ErrorHandler>) {
+    pub fn use_error_handler(&mut self, error_handler: Box<ErrorHandler>) {
         self.error_handler = Some(error_handler);
     }
 
@@ -192,13 +194,13 @@ where
         self.handle_error(error.into());
     }
 
-    /// Loads and deserializes a view based on the view id.
-    /// Use this method to load a query when requested by a user.
+    /// Loads and deserializes a view based on the provided view id.
+    /// Use this method to load a materialized view when requested by a user.
     ///
     /// This is an asynchronous method so don't forget to `await`.
     ///
     /// ```ignore
-    /// let query = query_repository.load("customer-B24DA0".to_string()).await;
+    /// let view = query.load("customer-B24DA0".to_string()).await;
     /// ```
     pub async fn load(&self, query_instance_id: String) -> Option<V> {
         let query = format!(

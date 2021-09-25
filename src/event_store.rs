@@ -6,8 +6,13 @@ use crate::event_repository::EventRepository;
 use cqrs_es::{Aggregate, AggregateContext, AggregateError, EventEnvelope, EventStore};
 use sqlx::{Pool, Postgres};
 
-/// Storage engine using an Postgres backing. This is the only persistent store currently
-/// provided.
+/// Storage engine using a Postgres database backing.
+/// This is an event-sourced `EventStore`, meaning it uses events as the
+/// primary source of truth for the state of the aggregate.
+///
+/// For a snapshot-based `EventStore`
+/// see [`PostgresSnapshotStore`](struct.PostgresSnapshotStore.html).
+///
 pub struct PostgresStore<A: Aggregate + Send + Sync> {
     repo: EventRepository<A>,
     _phantom: PhantomData<A>,
@@ -16,10 +21,6 @@ pub struct PostgresStore<A: Aggregate + Send + Sync> {
 impl<A: Aggregate> PostgresStore<A> {
     /// Creates a new `PostgresStore` from the provided database connection,
     /// an `EventStore` used for configuring a new cqrs framework.
-    ///
-    /// This is an event sourced `EventStore`, meaning all previous events for the
-    /// aggregate instance will be loaded before processing a command. For a snapshot-based
-    /// `EventStore` see [`PostgresSnapshotStore`](struct.PostgresSnapshotStore.html).
     ///
     /// ```ignore
     /// # use postgres_es::PostgresStore;
@@ -79,14 +80,12 @@ impl<A: Aggregate> EventStore<A> for PostgresStore<A> {
     }
 }
 
-/// Holds context for a pure event store implementation for PostgresStore
+/// Holds context for the pure event store implementation PostgresStore.
+/// This is only used internally within the `EventStore`.
 pub struct PostgresStoreAggregateContext<A: Aggregate> {
-    /// The aggregate ID of the aggregate instance that has been loaded.
-    pub aggregate_id: String,
-    /// The current state of the aggregate instance.
-    pub aggregate: A,
-    /// The last committed event sequence number for this aggregate instance.
-    pub current_sequence: usize,
+    aggregate_id: String,
+    aggregate: A,
+    current_sequence: usize,
 }
 
 impl<A: Aggregate> AggregateContext<A> for PostgresStoreAggregateContext<A> {

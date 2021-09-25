@@ -8,9 +8,14 @@ use sqlx::{Pool, Postgres};
 use crate::event_repository::EventRepository;
 use crate::snapshot_repository::SnapshotRepository;
 
-/// Storage engine using an Postgres backing and relying on a serialization of the aggregate rather
-/// than individual events. This is similar to the "snapshot strategy" seen in many CQRS
-/// frameworks.
+/// Storage engine using a Postgres database backing.
+/// This is an snapshot-sourced `EventStore`, meaning it uses the serialized aggregate as the
+/// primary source of truth for the state of the aggregate.
+///
+/// The individual events are also persisted but are used only for updating queries.
+///
+/// For a event-sourced `EventStore` see [`PostgresStore`](struct.PostgresStore.html).
+///
 pub struct PostgresSnapshotStore<A: Aggregate> {
     repo: SnapshotRepository<A>,
     // TODO: combine event retrieval and remove EventRepository here
@@ -19,12 +24,8 @@ pub struct PostgresSnapshotStore<A: Aggregate> {
 }
 
 impl<A: Aggregate> PostgresSnapshotStore<A> {
-    /// Creates a new `PostgresSnapshotStore` from the provided database connection,
+    /// Creates a new `PostgresSnapshotStore` from the provided database connection pool,
     /// an `EventStore` used for configuring a new cqrs framework.
-    ///
-    /// This is an snapshot-sourced `EventStore`, meaning a snapshot of the aggregate will be
-    /// serialized for persistence and and deserialized before processing a command.
-    /// For a event-sourced `EventStore` see [`PostgresStore`](struct.PostgresStore.html).
     ///
     /// ```ignore
     /// # use postgres_es::PostgresSnapshotStore;
@@ -109,20 +110,17 @@ impl<A: Aggregate> EventStore<A> for PostgresSnapshotStore<A> {
     }
 }
 
-/// Holds context for a pure event store implementation for PostgresSnapshotStore
+/// Holds context for the snapshot-sourced implementation PostgresSnapshotStore.
+/// This is only used internally within the `EventStore`.
 #[derive(Debug, PartialEq)]
 pub struct PostgresSnapshotStoreAggregateContext<A>
 where
     A: Aggregate,
 {
-    /// The aggregate ID of the aggregate instance that has been loaded.
-    pub aggregate_id: String,
-    /// The current state of the aggregate instance.
+    pub(crate) aggregate_id: String,
     pub(crate) aggregate: A,
-    /// The last committed event sequence number for this aggregate instance.
-    pub current_sequence: usize,
-    /// The last committed snapshot version for this aggregate instance.
-    pub current_snapshot: usize,
+    pub(crate) current_sequence: usize,
+    pub(crate) current_snapshot: usize,
 }
 
 impl<A> AggregateContext<A> for PostgresSnapshotStoreAggregateContext<A>
