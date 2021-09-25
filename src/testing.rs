@@ -13,7 +13,6 @@ mod tests {
     use crate::{default_postgress_pool, GenericQueryRepository};
     use crate::{
         postgres_cqrs, PostgresSnapshotStore, PostgresSnapshotStoreAggregateContext, PostgresStore,
-        PostgresStoreAggregateContext,
     };
 
     #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -87,7 +86,7 @@ mod tests {
         }
     }
 
-    assert_impl_all!(rdbmsstore; PostgresStore::<TestAggregate>, EventStore::<TestAggregate, PostgresStoreAggregateContext<TestAggregate>>);
+    assert_impl_all!(rdbmsstore; PostgresStore::<TestAggregate>, EventStore::<TestAggregate>);
 
     const TEST_CONNECTION_STRING: &str = "postgresql://test_user:test_pass@localhost:5432/test";
 

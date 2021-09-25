@@ -37,7 +37,9 @@ impl<A: Aggregate> PostgresStore<A> {
 }
 
 #[async_trait]
-impl<A: Aggregate> EventStore<A, PostgresStoreAggregateContext<A>> for PostgresStore<A> {
+impl<A: Aggregate> EventStore<A> for PostgresStore<A> {
+    type AC = PostgresStoreAggregateContext<A>;
+
     async fn load(&self, aggregate_id: &str) -> Vec<EventEnvelope<A>> {
         match self.repo.get_events(aggregate_id).await {
             Ok(val) => val,

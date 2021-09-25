@@ -3,10 +3,10 @@ use std::marker::PhantomData;
 
 use async_trait::async_trait;
 use cqrs_es::{Aggregate, AggregateContext, AggregateError, EventEnvelope, EventStore};
+use sqlx::{Pool, Postgres};
 
 use crate::event_repository::EventRepository;
 use crate::snapshot_repository::SnapshotRepository;
-use sqlx::{Pool, Postgres};
 
 /// Storage engine using an Postgres backing and relying on a serialization of the aggregate rather
 /// than individual events. This is similar to the "snapshot strategy" seen in many CQRS
@@ -44,11 +44,11 @@ impl<A: Aggregate> PostgresSnapshotStore<A> {
 }
 
 #[async_trait]
-impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>>
-    for PostgresSnapshotStore<A>
-{
+impl<A: Aggregate> EventStore<A> for PostgresSnapshotStore<A> {
+    type AC = PostgresSnapshotStoreAggregateContext<A>;
+
     async fn load(&self, aggregate_id: &str) -> Vec<EventEnvelope<A>> {
-        // TODO: combine with store
+        // TODO: combine with event store
         match self.event_repo.get_events(aggregate_id).await {
             Ok(val) => val,
             Err(_err) => {
