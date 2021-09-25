@@ -3,17 +3,17 @@ use std::marker::PhantomData;
 
 use crate::error::PostgresAggregateError;
 use async_trait::async_trait;
-use cqrs_es::{Aggregate, AggregateError, EventEnvelope, Query, QueryProcessor};
+use cqrs_es::{Aggregate, AggregateError, EventEnvelope, Query, View};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use sqlx::postgres::PgRow;
 use sqlx::{Pool, Postgres, Row};
 
-/// A simple query repository that can be used both to return deserialized
-/// views and to act as a query processor.
-pub struct GenericQueryRepository<V, A>
+/// A simple query and view repository. This is used both to act as a Query for processing events
+/// and to return deserialized views.
+pub struct GenericQuery<V, A>
 where
-    V: Query<A>,
+    V: View<A>,
     A: Aggregate,
 {
     pool: Pool<Postgres>,
@@ -26,7 +26,7 @@ type ErrorHandler = dyn Fn(AggregateError) + Send + Sync + 'static;
 
 // mod doc {
 //     use crate::{GenericQueryRepository, PostgresStore};
-//     use cqrs_es::{Aggregate, AggregateError, CqrsFramework, DomainEvent, EventEnvelope, Query};
+//     use cqrs_es::{Aggregate, AggregateError, CqrsFramework, DomainEvent, EventEnvelope, View};
 //     use serde::de::DeserializeOwned;
 //     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 //     use sqlx::{Pool, Postgres};
@@ -72,8 +72,8 @@ type ErrorHandler = dyn Fn(AggregateError) + Send + Sync + 'static;
 //     }
 //
 //     #[derive(Debug, Default, Serialize, Deserialize)]
-//     struct MyQuery;
-//     impl Query<MyAggregate> for MyQuery {
+//     struct MyView;
+//     impl View<MyAggregate> for MyView {
 //         fn update(&mut self, event: &EventEnvelope<MyAggregate>) {
 //             todo!()
 //         }
@@ -90,9 +90,9 @@ type ErrorHandler = dyn Fn(AggregateError) + Send + Sync + 'static;
 //         let cqrs = CqrsFramework::new(store, vec![Box::new(query_repository)]);
 //     }
 // }
-impl<V, A> GenericQueryRepository<V, A>
+impl<V, A> GenericQuery<V, A>
 where
-    V: Query<A>,
+    V: View<A>,
     A: Aggregate,
 {
     /// Creates a new `GenericQueryRepository` that will store its' views in the table named
@@ -106,7 +106,7 @@ where
     /// ```
     #[must_use]
     pub fn new(query_name: &str, pool: Pool<Postgres>) -> Self {
-        GenericQueryRepository {
+        GenericQuery {
             pool,
             query_name: query_name.to_string(),
             error_handler: None,
@@ -235,9 +235,9 @@ where
 }
 
 #[async_trait]
-impl<Q, A> QueryProcessor<A> for GenericQueryRepository<Q, A>
+impl<Q, A> Query<A> for GenericQuery<Q, A>
 where
-    Q: Query<A> + Send + Sync + 'static,
+    Q: View<A> + Send + Sync + 'static,
     A: Aggregate,
 {
     async fn dispatch(&self, query_instance_id: &str, events: &[EventEnvelope<A>]) {

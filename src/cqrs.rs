@@ -1,4 +1,4 @@
-use cqrs_es::{Aggregate, CqrsFramework, QueryProcessor};
+use cqrs_es::{Aggregate, CqrsFramework, Query};
 
 use crate::snapshot_store::PostgresSnapshotStore;
 use crate::PostgresStore;
@@ -25,7 +25,7 @@ pub async fn default_postgress_pool(connection_string: &str) -> Pool<Postgres> {
 /// A convenience function for creating a CqrsFramework
 pub fn postgres_cqrs<A>(
     pool: Pool<Postgres>,
-    query_processor: Vec<Box<dyn QueryProcessor<A>>>,
+    query_processor: Vec<Box<dyn Query<A>>>,
 ) -> PostgresCqrs<A>
 where
     A: Aggregate,
@@ -37,7 +37,7 @@ where
 /// A convenience function for creating a CqrsFramework using a snapshot store
 pub fn postgres_snapshot_cqrs<A>(
     pool: Pool<Postgres>,
-    query_processor: Vec<Box<dyn QueryProcessor<A>>>,
+    query_processor: Vec<Box<dyn Query<A>>>,
 ) -> PostgresSnapshotCqrs<A>
 where
     A: Aggregate,

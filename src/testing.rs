@@ -2,7 +2,7 @@
 mod tests {
     use std::collections::HashMap;
 
-    use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, Query};
+    use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, View};
     use serde::{Deserialize, Serialize};
     use serde_json::{Map, Value};
     use sqlx::{Pool, Postgres};
@@ -10,7 +10,7 @@ mod tests {
 
     use crate::event_repository::EventRepository;
     use crate::snapshot_repository::SnapshotRepository;
-    use crate::{default_postgress_pool, GenericQueryRepository};
+    use crate::{default_postgress_pool, GenericQuery};
     use crate::{
         postgres_cqrs, PostgresSnapshotStore, PostgresSnapshotStoreAggregateContext, PostgresStore,
     };
@@ -73,14 +73,14 @@ mod tests {
 
     pub enum TestCommand {}
 
-    type TestQueryRepository = GenericQueryRepository<TestQuery, TestAggregate>;
+    type TestQueryRepository = GenericQuery<TestView, TestAggregate>;
 
     #[derive(Debug, Default, Serialize, Deserialize)]
-    struct TestQuery {
+    struct TestView {
         events: Vec<TestEvent>,
     }
 
-    impl Query<TestAggregate> for TestQuery {
+    impl View<TestAggregate> for TestView {
         fn update(&mut self, event: &EventEnvelope<TestAggregate>) {
             self.events.push(event.payload.clone());
         }
