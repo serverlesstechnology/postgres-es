@@ -19,7 +19,19 @@ pub struct PostgresSnapshotStore<A: Aggregate> {
 }
 
 impl<A: Aggregate> PostgresSnapshotStore<A> {
-    /// Creates a new `PostgresSnapshotStore` from the provided database connection.
+    /// Creates a new `PostgresSnapshotStore` from the provided database connection,
+    /// an `EventStore` used for configuring a new cqrs framework.
+    ///
+    /// This is an snapshot-sourced `EventStore`, meaning a snapshot of the aggregate will be
+    /// serialized for persistence and and deserialized before processing a command.
+    /// For a event-sourced `EventStore` see [`PostgresStore`](struct.PostgresStore.html).
+    ///
+    /// ```ignore
+    /// # use postgres_es::PostgresSnapshotStore;
+    /// # use cqrs_es::CqrsFramework;
+    /// let store = PostgresSnapshotStore::<MyAggregate>::new(pool);
+    /// let cqrs = CqrsFramework::new(store, vec![]);
+    /// ```
     pub fn new(pool: Pool<Postgres>) -> Self {
         let repo = SnapshotRepository::new(pool.clone());
         let event_repo = EventRepository::new(pool);
@@ -97,7 +109,7 @@ impl<A: Aggregate> EventStore<A, PostgresSnapshotStoreAggregateContext<A>>
     }
 }
 
-/// Holds context for a pure event store implementation for MemStore
+/// Holds context for a pure event store implementation for PostgresSnapshotStore
 #[derive(Debug, PartialEq)]
 pub struct PostgresSnapshotStoreAggregateContext<A>
 where

@@ -9,7 +9,7 @@ use serde::Serialize;
 use sqlx::postgres::PgRow;
 use sqlx::{Pool, Postgres, Row};
 
-/// This provides a simple query repository that can be used both to return deserialized
+/// A simple query repository that can be used both to return deserialized
 /// views and to act as a query processor.
 pub struct GenericQueryRepository<V, A>
 where
@@ -24,6 +24,72 @@ where
 
 type ErrorHandler = dyn Fn(AggregateError) + Send + Sync + 'static;
 
+// mod doc {
+//     use crate::{GenericQueryRepository, PostgresStore};
+//     use cqrs_es::{Aggregate, AggregateError, CqrsFramework, DomainEvent, EventEnvelope, Query};
+//     use serde::de::DeserializeOwned;
+//     use serde::{Deserialize, Deserializer, Serialize, Serializer};
+//     use sqlx::{Pool, Postgres};
+//
+//     #[derive(Debug)]
+//     enum MyError {
+//         NotImplemented,
+//     }
+//
+//     #[derive(Debug)]
+//     enum MyCommand {
+//         Start,
+//         Quit,
+//     }
+//     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+//     enum MyEvent {
+//         Started,
+//         Finished,
+//     }
+//
+//     impl DomainEvent for MyEvent {}
+//     #[derive(Debug, Default, Serialize, Deserialize)]
+//     struct MyAggregate;
+//
+//     impl Aggregate for MyAggregate {
+//         type Command = MyCommand;
+//         type Event = MyEvent;
+//
+//         fn aggregate_type() -> &'static str {
+//             "my-aggregate"
+//         }
+//
+//         fn handle(&self, command: Self::Command) -> Result<Vec<Self::Event>, AggregateError> {
+//             match command {
+//                 MyCommand::Start => Ok(vec![MyEvent::Started]),
+//                 MyCommand::Quit => Ok(vec![MyEvent::Finished]),
+//             }
+//         }
+//
+//         fn apply(&mut self, event: Self::Event) {
+//             todo!()
+//         }
+//     }
+//
+//     #[derive(Debug, Default, Serialize, Deserialize)]
+//     struct MyQuery;
+//     impl Query<MyAggregate> for MyQuery {
+//         fn update(&mut self, event: &EventEnvelope<MyAggregate>) {
+//             todo!()
+//         }
+//     }
+//     #[test]
+//     fn test() {}
+//     async fn configure_me(pool: Pool<Postgres>) {
+//         let mut query_repository =
+//             GenericQueryRepository::<MyQuery, MyAggregate>::new("my-query", pool.clone());
+//         query_repository.with_error_handler(Box::new(|e| panic!("{}", e)));
+//         let query = query_repository.load("customer-B24DA0".to_string()).await;
+//
+//         let store = PostgresStore::<MyAggregate>::new(pool);
+//         let cqrs = CqrsFramework::new(store, vec![Box::new(query_repository)]);
+//     }
+// }
 impl<V, A> GenericQueryRepository<V, A>
 where
     V: Query<A>,
@@ -31,7 +97,13 @@ where
 {
     /// Creates a new `GenericQueryRepository` that will store its' views in the table named
     /// identically to the `query_name` value provided. This table should be created by the user
-    /// previously (see `/db/init.sql`).
+    /// before using this query repository (see `/db/init.sql` sql initialization file).
+    ///
+    /// ```ignore
+    /// let query_repository = GenericQueryRepository::<MyQuery,MyAggregate>::new("my-query", pool);
+    /// let store = PostgresStore::<MyAggregate>::new(pool);
+    /// let cqrs = CqrsFramework::new(store, vec![Box::new(query_repository)]);
+    /// ```
     #[must_use]
     pub fn new(query_name: &str, pool: Pool<Postgres>) -> Self {
         GenericQueryRepository {
@@ -45,14 +117,16 @@ where
     /// Queries are infallible and _should_ never cause errors,
     /// but programming errors or other technical problems
     /// could, and this is where the user should log or otherwise register the issue.
+    ///
+    /// This is not required for usage but without an error handler any error encountered
+    /// by the query repository will simply be ignored.
+    ///
+    /// _An error handler that panics on any error._
+    /// ```ignore
+    /// query_repository.with_error_handler(Box::new(|e|panic!("{}",e)));
+    /// ```
     pub fn with_error_handler(&mut self, error_handler: Box<ErrorHandler>) {
         self.error_handler = Some(error_handler);
-    }
-
-    /// Returns the originally configured view name.
-    #[must_use]
-    pub fn view_name(&self) -> String {
-        self.query_name.to_string()
     }
 
     async fn load_mut(
@@ -93,8 +167,7 @@ where
         }
     }
 
-    /// Used to apply committed events to a view.
-    pub async fn apply_events(
+    pub(crate) async fn apply_events(
         &self,
         query_instance_id: &str,
         events: &[EventEnvelope<A>],
@@ -120,6 +193,13 @@ where
     }
 
     /// Loads and deserializes a view based on the view id.
+    /// Use this method to load a query when requested by a user.
+    ///
+    /// This is an asynchronous method so don't forget to `await`.
+    ///
+    /// ```ignore
+    /// let query = query_repository.load("customer-B24DA0".to_string()).await;
+    /// ```
     pub async fn load(&self, query_instance_id: String) -> Option<V> {
         let query = format!(
             "SELECT version,payload FROM {} WHERE query_instance_id= $1",

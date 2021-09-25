@@ -14,7 +14,19 @@ pub struct PostgresStore<A: Aggregate + Send + Sync> {
 }
 
 impl<A: Aggregate> PostgresStore<A> {
-    /// Creates a new `PostgresStore` from the provided database connection.
+    /// Creates a new `PostgresStore` from the provided database connection,
+    /// an `EventStore` used for configuring a new cqrs framework.
+    ///
+    /// This is an event sourced `EventStore`, meaning all previous events for the
+    /// aggregate instance will be loaded before processing a command. For a snapshot-based
+    /// `EventStore` see [`PostgresSnapshotStore`](struct.PostgresSnapshotStore.html).
+    ///
+    /// ```ignore
+    /// # use postgres_es::PostgresStore;
+    /// # use cqrs_es::CqrsFramework;
+    /// let store = PostgresStore::<MyAggregate>::new(pool);
+    /// let cqrs = CqrsFramework::new(store, vec![]);
+    /// ```
     pub fn new(pool: Pool<Postgres>) -> Self {
         let repo = EventRepository::new(pool);
         PostgresStore {
