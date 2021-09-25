@@ -61,8 +61,8 @@ where
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
         let mut current_sequence: usize = 0;
         for event in events {
-            let payload = serde_json::to_string(&event.payload)?;
-            let metadata = serde_json::to_string(&event.metadata)?;
+            let payload = serde_json::to_value(&event.payload)?;
+            let metadata = serde_json::to_value(&event.metadata)?;
             current_sequence = event.sequence;
             sqlx::query(event_repository::INSERT_EVENT)
                 .bind(A::aggregate_type())
@@ -74,7 +74,7 @@ where
                 .await?;
         }
 
-        let aggregate_payload = serde_json::to_string(&aggregate)?;
+        let aggregate_payload = serde_json::to_value(&aggregate)?;
         sqlx::query(INSERT_SNAPSHOT)
             .bind(A::aggregate_type())
             .bind(aggregate_id.as_str())
@@ -97,8 +97,8 @@ where
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
         let mut current_sequence: usize = 0;
         for event in events {
-            let payload = serde_json::to_string(&event.payload)?;
-            let metadata = serde_json::to_string(&event.metadata)?;
+            let payload = serde_json::to_value(&event.payload)?;
+            let metadata = serde_json::to_value(&event.metadata)?;
             current_sequence = event.sequence;
             sqlx::query(event_repository::INSERT_EVENT)
                 .bind(A::aggregate_type())
@@ -110,7 +110,7 @@ where
                 .await?;
         }
 
-        let aggregate_payload = serde_json::to_string(&aggregate)?;
+        let aggregate_payload = serde_json::to_value(&aggregate)?;
         sqlx::query(UPDATE_SNAPSHOT)
             .bind(A::aggregate_type())
             .bind(aggregate_id.as_str())
@@ -133,8 +133,7 @@ where
         let current_sequence = s as usize;
         let s: i64 = row.get("current_snapshot");
         let current_snapshot = s as usize;
-        let payload: String = row.get("payload");
-        let aggregate: A = serde_json::from_str(&payload)?;
+        let aggregate: A = serde_json::from_value(row.get("payload"))?;
         Ok(PostgresSnapshotStoreAggregateContext {
             aggregate_id,
             aggregate,

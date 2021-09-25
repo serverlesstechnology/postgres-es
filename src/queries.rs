@@ -156,8 +156,7 @@ where
             Some(row) => {
                 let view_name = self.query_name.clone();
                 let version = row.get("version");
-                let payload = row.get("payload");
-                let view = serde_json::from_str(payload)?;
+                let view = serde_json::from_value(row.get("payload"))?;
                 let view_context = QueryContext {
                     query_name: view_name,
                     query_instance_id,
@@ -225,8 +224,7 @@ where
     }
 
     fn deser_view(&self, row: PgRow) -> Option<V> {
-        let payload = row.get("payload");
-        match serde_json::from_str(payload) {
+        match serde_json::from_value(row.get("payload")) {
             Ok(view) => Some(view),
             Err(e) => {
                 self.handle_internal_error(e.into());
@@ -269,17 +267,11 @@ where
 {
     async fn commit(&self, pool: Pool<Postgres>, view: V) -> Result<(), PostgresAggregateError> {
         let sql = match self.version {
-            0 => format!(
-                "INSERT INTO {} (payload, version, query_instance_id) VALUES ( $1, $2, $3 )",
-                &self.query_name
-            ),
-            _ => format!(
-                "UPDATE {} SET payload= $1 , version= $2 WHERE query_instance_id= $3",
-                &self.query_name
-            ),
+            0 => self.insert_sql(),
+            _ => self.update_sql(),
         };
         let version = self.version + 1;
-        let payload = serde_json::to_string(&view).expect("failed to serialize view");
+        let payload = serde_json::to_value(&view)?;
         sqlx::query(sql.as_str())
             .bind(payload)
             .bind(&version)
@@ -287,5 +279,18 @@ where
             .execute(&pool)
             .await?;
         Ok(())
+    }
+
+    fn insert_sql(&self) -> String {
+        format!(
+            "INSERT INTO {} (payload, version, query_instance_id) VALUES ( $1, $2, $3 )",
+            self.query_name
+        )
+    }
+    fn update_sql(&self) -> String {
+        format!(
+            "UPDATE {} SET payload= $1 , version= $2 WHERE query_instance_id= $3",
+            self.query_name
+        )
     }
 }
