@@ -69,7 +69,19 @@ mod tests {
         pub description: String,
     }
 
-    impl DomainEvent for TestEvent {}
+    impl DomainEvent for TestEvent {
+        fn event_type(&self) -> &'static str {
+            match self {
+                TestEvent::Created(_) => "Created",
+                TestEvent::Tested(_) => "Tested",
+                TestEvent::SomethingElse(_) => "SomethingElse",
+            }
+        }
+
+        fn event_version(&self) -> &'static str {
+            "1.0"
+        }
+    }
 
     pub enum TestCommand {}
 

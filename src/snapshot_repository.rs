@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use cqrs_es::{Aggregate, EventEnvelope};
+use cqrs_es::{Aggregate, DomainEvent, EventEnvelope};
 use sqlx::postgres::PgRow;
 use sqlx::{Pool, Postgres, Row, Transaction};
 
@@ -61,6 +61,8 @@ where
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
         let mut current_sequence: usize = 0;
         for event in events {
+            let event_type = event.payload.event_type();
+            let event_version = event.payload.event_version();
             let payload = serde_json::to_value(&event.payload)?;
             let metadata = serde_json::to_value(&event.metadata)?;
             current_sequence = event.sequence;
@@ -68,6 +70,8 @@ where
                 .bind(A::aggregate_type())
                 .bind(event.aggregate_id.as_str())
                 .bind(event.sequence as u32)
+                .bind(event_type)
+                .bind(event_version)
                 .bind(&payload)
                 .bind(&metadata)
                 .execute(&mut tx)
@@ -97,6 +101,8 @@ where
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
         let mut current_sequence: usize = 0;
         for event in events {
+            let event_type = event.payload.event_type();
+            let event_version = event.payload.event_version();
             let payload = serde_json::to_value(&event.payload)?;
             let metadata = serde_json::to_value(&event.metadata)?;
             current_sequence = event.sequence;
@@ -104,6 +110,8 @@ where
                 .bind(A::aggregate_type())
                 .bind(event.aggregate_id.as_str())
                 .bind(event.sequence as u32)
+                .bind(event_type)
+                .bind(event_version)
                 .bind(&payload)
                 .bind(&metadata)
                 .execute(&mut tx)

@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::error::PostgresAggregateError;
-use cqrs_es::{Aggregate, EventEnvelope};
+use cqrs_es::{Aggregate, DomainEvent, EventEnvelope};
 use futures::TryStreamExt;
 use sqlx::postgres::PgRow;
 use sqlx::Row;
@@ -9,8 +9,8 @@ use sqlx::{Pool, Postgres, Transaction};
 use std::collections::HashMap;
 
 pub(crate) static INSERT_EVENT: &str =
-    "INSERT INTO events (aggregate_type, aggregate_id, sequence, payload, metadata)
-                               VALUES ($1, $2, $3, $4, $5)";
+    "INSERT INTO events (aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata)
+                               VALUES ($1, $2, $3, $4, $5, $6, $7)";
 pub(crate) static SELECT_EVENTS: &str =
     "SELECT aggregate_type, aggregate_id, sequence, payload, metadata
                                 FROM events
@@ -51,12 +51,16 @@ where
     ) -> Result<(), PostgresAggregateError> {
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
         for event in events {
+            let event_type = event.payload.event_type();
+            let event_version = event.payload.event_version();
             let payload = serde_json::to_value(&event.payload)?;
             let metadata = serde_json::to_value(&event.metadata)?;
             sqlx::query(INSERT_EVENT)
                 .bind(A::aggregate_type())
                 .bind(event.aggregate_id.as_str())
                 .bind(event.sequence as u32)
+                .bind(event_type)
+                .bind(event_version)
                 .bind(&payload)
                 .bind(&metadata)
                 .execute(&mut tx)
