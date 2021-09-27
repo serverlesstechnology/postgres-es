@@ -18,10 +18,8 @@ cqrs-es = "0.2.0"
 ## Usage
 
 ```
-use postgres_es::{postgres_cqrs, PostgresStore, Connection};
-
-let connection = Connection::new("postgresql://demo_user:demo_pass@localhost:5432/demo");
-let cqrs = postgres_es::postgres_cqrs(connection, vec![Box::new(my_query)])
+let store = default_postgress_pool("postgresql://my_user:my_pass@localhost:5432/my_db");
+let cqrs = postgres_es::postgres_cqrs(pool, vec![Box::new(my_query)])
 ```
 
 ## Change log
