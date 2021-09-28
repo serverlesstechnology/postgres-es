@@ -133,28 +133,36 @@ mod tests {
             .apply_events(
                 &id,
                 &vec![
-                    EventEnvelope {
-                        aggregate_id: id.clone(),
-                        sequence: 1,
-                        aggregate_type: TestAggregate::aggregate_type().to_string(),
-                        payload: TestEvent::Created(Created { id: id.clone() }),
-                        metadata: Default::default(),
-                    },
-                    EventEnvelope {
-                        aggregate_id: id.clone(),
-                        sequence: 2,
-                        aggregate_type: TestAggregate::aggregate_type().to_string(),
-                        payload: TestEvent::Tested(Tested {
+                    test_event_envelope(&id, 1, TestEvent::Created(Created { id: id.clone() })),
+                    test_event_envelope(
+                        &id,
+                        2,
+                        TestEvent::Tested(Tested {
                             test_name: "a test was run".to_string(),
                         }),
-                        metadata: Default::default(),
-                    },
+                    ),
                 ],
             )
             .await
             .unwrap();
         let result = query.load(id).await.unwrap();
         assert_eq!(2, result.events.len())
+    }
+
+    fn test_event_envelope(
+        id: &str,
+        sequence: usize,
+        payload: TestEvent,
+    ) -> EventEnvelope<TestAggregate> {
+        EventEnvelope {
+            aggregate_id: id.to_string(),
+            sequence,
+            aggregate_type: TestAggregate::aggregate_type().to_string(),
+            event_type: payload.event_type().to_string(),
+            event_version: payload.event_version().to_string(),
+            payload,
+            metadata: Default::default(),
+        }
     }
 
     #[tokio::test]
@@ -282,22 +290,14 @@ mod tests {
 
         event_repo
             .insert_events(vec![
-                EventEnvelope {
-                    aggregate_id: id.clone(),
-                    sequence: 1,
-                    aggregate_type: TestAggregate::aggregate_type().to_string(),
-                    payload: TestEvent::Created(Created { id: id.clone() }),
-                    metadata: Default::default(),
-                },
-                EventEnvelope {
-                    aggregate_id: id.clone(),
-                    sequence: 2,
-                    aggregate_type: TestAggregate::aggregate_type().to_string(),
-                    payload: TestEvent::Tested(Tested {
+                test_event_envelope(&id, 1, TestEvent::Created(Created { id: id.clone() })),
+                test_event_envelope(
+                    &id,
+                    2,
+                    TestEvent::Tested(Tested {
                         test_name: "a test was run".to_string(),
                     }),
-                    metadata: Default::default(),
-                },
+                ),
             ])
             .await
             .unwrap();
@@ -307,24 +307,20 @@ mod tests {
 
         event_repo
             .insert_events(vec![
-                EventEnvelope {
-                    aggregate_id: id.clone(),
-                    sequence: 3,
-                    aggregate_type: TestAggregate::aggregate_type().to_string(),
-                    payload: TestEvent::SomethingElse(SomethingElse {
+                test_event_envelope(
+                    &id,
+                    3,
+                    TestEvent::SomethingElse(SomethingElse {
                         description: "this should not persist".to_string(),
                     }),
-                    metadata: Default::default(),
-                },
-                EventEnvelope {
-                    aggregate_id: id.clone(),
-                    sequence: 2,
-                    aggregate_type: TestAggregate::aggregate_type().to_string(),
-                    payload: TestEvent::SomethingElse(SomethingElse {
+                ),
+                test_event_envelope(
+                    &id,
+                    2,
+                    TestEvent::SomethingElse(SomethingElse {
                         description: "bad sequence number".to_string(),
                     }),
-                    metadata: Default::default(),
-                },
+                ),
             ])
             .await
             .unwrap_err();
