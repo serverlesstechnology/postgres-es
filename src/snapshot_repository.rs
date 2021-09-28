@@ -1,11 +1,12 @@
 use std::marker::PhantomData;
 
-use cqrs_es::{Aggregate, DomainEvent, EventEnvelope};
+use cqrs_es::{Aggregate, EventEnvelope};
 use sqlx::postgres::PgRow;
 use sqlx::{Pool, Postgres, Row, Transaction};
 
 use crate::error::PostgresAggregateError;
-use crate::{event_repository, PostgresSnapshotStoreAggregateContext};
+use crate::event_repository::PostgresEventRepository;
+use crate::PostgresSnapshotStoreAggregateContext;
 
 static INSERT_SNAPSHOT: &str =
     "INSERT INTO snapshots (aggregate_type, aggregate_id, last_sequence, current_snapshot, payload)
@@ -18,12 +19,12 @@ static SELECT_SNAPSHOT: &str =
                                 FROM snapshots
                                 WHERE aggregate_type = $1 AND aggregate_id = $2";
 
-pub(crate) struct SnapshotRepository<A> {
+pub(crate) struct PostgresSnapshotRepository<A> {
     pool: Pool<Postgres>,
     _phantom: PhantomData<A>,
 }
 
-impl<A> SnapshotRepository<A>
+impl<A> PostgresSnapshotRepository<A>
 where
     A: Aggregate,
 {
@@ -59,25 +60,8 @@ where
         events: &[EventEnvelope<A>],
     ) -> Result<(), PostgresAggregateError> {
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
-        let mut current_sequence: usize = 0;
-        for event in events {
-            let event_type = event.payload.event_type();
-            let event_version = event.payload.event_version();
-            let payload = serde_json::to_value(&event.payload)?;
-            let metadata = serde_json::to_value(&event.metadata)?;
-            current_sequence = event.sequence;
-            sqlx::query(event_repository::INSERT_EVENT)
-                .bind(A::aggregate_type())
-                .bind(event.aggregate_id.as_str())
-                .bind(event.sequence as u32)
-                .bind(event_type)
-                .bind(event_version)
-                .bind(&payload)
-                .bind(&metadata)
-                .execute(&mut tx)
-                .await?;
-        }
-
+        let current_sequence =
+            PostgresEventRepository::<A>::persist_events(&mut tx, events).await?;
         let aggregate_payload = serde_json::to_value(&aggregate)?;
         sqlx::query(INSERT_SNAPSHOT)
             .bind(A::aggregate_type())
@@ -99,24 +83,8 @@ where
         events: &[EventEnvelope<A>],
     ) -> Result<(), PostgresAggregateError> {
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
-        let mut current_sequence: usize = 0;
-        for event in events {
-            let event_type = event.payload.event_type();
-            let event_version = event.payload.event_version();
-            let payload = serde_json::to_value(&event.payload)?;
-            let metadata = serde_json::to_value(&event.metadata)?;
-            current_sequence = event.sequence;
-            sqlx::query(event_repository::INSERT_EVENT)
-                .bind(A::aggregate_type())
-                .bind(event.aggregate_id.as_str())
-                .bind(event.sequence as u32)
-                .bind(event_type)
-                .bind(event_version)
-                .bind(&payload)
-                .bind(&metadata)
-                .execute(&mut tx)
-                .await?;
-        }
+        let current_sequence =
+            PostgresEventRepository::<A>::persist_events(&mut tx, events).await?;
 
         let aggregate_payload = serde_json::to_value(&aggregate)?;
         sqlx::query(UPDATE_SNAPSHOT)

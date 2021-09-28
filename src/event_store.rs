@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-use crate::event_repository::EventRepository;
+use crate::event_repository::PostgresEventRepository;
 use cqrs_es::{Aggregate, AggregateContext, AggregateError, EventEnvelope, EventStore};
 use sqlx::{Pool, Postgres};
 
@@ -14,7 +14,7 @@ use sqlx::{Pool, Postgres};
 /// see [`PostgresSnapshotStore`](struct.PostgresSnapshotStore.html).
 ///
 pub struct PostgresStore<A: Aggregate + Send + Sync> {
-    repo: EventRepository<A>,
+    repo: PostgresEventRepository<A>,
     _phantom: PhantomData<A>,
 }
 
@@ -29,7 +29,7 @@ impl<A: Aggregate> PostgresStore<A> {
     /// let cqrs = CqrsFramework::new(store, vec![]);
     /// ```
     pub fn new(pool: Pool<Postgres>) -> Self {
-        let repo = EventRepository::new(pool);
+        let repo = PostgresEventRepository::new(pool);
         PostgresStore {
             repo,
             _phantom: PhantomData,

@@ -8,8 +8,8 @@ mod tests {
     use sqlx::{Pool, Postgres};
     use static_assertions::assert_impl_all;
 
-    use crate::event_repository::EventRepository;
-    use crate::snapshot_repository::SnapshotRepository;
+    use crate::event_repository::PostgresEventRepository;
+    use crate::snapshot_repository::PostgresSnapshotRepository;
     use crate::{default_postgress_pool, GenericQuery};
     use crate::{
         postgres_cqrs, PostgresSnapshotStore, PostgresSnapshotStoreAggregateContext, PostgresStore,
@@ -284,7 +284,8 @@ mod tests {
     async fn event_repositories() {
         let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
         let id = uuid::Uuid::new_v4().to_string();
-        let event_repo: EventRepository<TestAggregate> = EventRepository::new(pool.clone());
+        let event_repo: PostgresEventRepository<TestAggregate> =
+            PostgresEventRepository::new(pool.clone());
         let events = event_repo.get_events(&id).await.unwrap();
         assert!(events.is_empty());
 
@@ -332,7 +333,8 @@ mod tests {
     async fn snapshot_repositories() {
         let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
         let id = uuid::Uuid::new_v4().to_string();
-        let repo: SnapshotRepository<TestAggregate> = SnapshotRepository::new(pool.clone());
+        let repo: PostgresSnapshotRepository<TestAggregate> =
+            PostgresSnapshotRepository::new(pool.clone());
         let snapshot = repo.get_snapshot(&id).await.unwrap();
         assert_eq!(None, snapshot);
 

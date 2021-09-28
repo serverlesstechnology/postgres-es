@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use cqrs_es::{Aggregate, AggregateContext, AggregateError, EventEnvelope, EventStore};
 use sqlx::{Pool, Postgres};
 
-use crate::event_repository::EventRepository;
-use crate::snapshot_repository::SnapshotRepository;
+use crate::event_repository::PostgresEventRepository;
+use crate::snapshot_repository::PostgresSnapshotRepository;
 
 /// Storage engine using a Postgres database backing.
 /// This is an snapshot-sourced `EventStore`, meaning it uses the serialized aggregate as the
@@ -17,9 +17,9 @@ use crate::snapshot_repository::SnapshotRepository;
 /// For a event-sourced `EventStore` see [`PostgresStore`](struct.PostgresStore.html).
 ///
 pub struct PostgresSnapshotStore<A: Aggregate> {
-    repo: SnapshotRepository<A>,
+    repo: PostgresSnapshotRepository<A>,
     // TODO: combine event retrieval and remove EventRepository here
-    event_repo: EventRepository<A>,
+    event_repo: PostgresEventRepository<A>,
     _phantom: PhantomData<A>,
 }
 
@@ -34,8 +34,8 @@ impl<A: Aggregate> PostgresSnapshotStore<A> {
     /// let cqrs = CqrsFramework::new(store, vec![]);
     /// ```
     pub fn new(pool: Pool<Postgres>) -> Self {
-        let repo = SnapshotRepository::new(pool.clone());
-        let event_repo = EventRepository::new(pool);
+        let repo = PostgresSnapshotRepository::new(pool.clone());
+        let event_repo = PostgresEventRepository::new(pool);
         PostgresSnapshotStore {
             repo,
             event_repo,

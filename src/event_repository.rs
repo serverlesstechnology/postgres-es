@@ -16,12 +16,12 @@ pub(crate) static SELECT_EVENTS: &str =
                                 FROM events
                                 WHERE aggregate_type = $1 AND aggregate_id = $2 ORDER BY sequence";
 
-pub(crate) struct EventRepository<A> {
+pub(crate) struct PostgresEventRepository<A> {
     pool: Pool<Postgres>,
     _phantom: PhantomData<A>,
 }
 
-impl<A> EventRepository<A>
+impl<A> PostgresEventRepository<A>
 where
     A: Aggregate,
 {
@@ -50,7 +50,18 @@ where
         events: Vec<EventEnvelope<A>>,
     ) -> Result<(), PostgresAggregateError> {
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
+        PostgresEventRepository::<A>::persist_events(&mut tx, events.as_slice()).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub(crate) async fn persist_events(
+        tx: &mut Transaction<'_, Postgres>,
+        events: &[EventEnvelope<A>],
+    ) -> Result<usize, PostgresAggregateError> {
+        let mut current_sequence: usize = 0;
         for event in events {
+            current_sequence = event.sequence;
             let event_type = event.payload.event_type();
             let event_version = event.payload.event_version();
             let payload = serde_json::to_value(&event.payload)?;
@@ -63,11 +74,10 @@ where
                 .bind(event_version)
                 .bind(&payload)
                 .bind(&metadata)
-                .execute(&mut tx)
+                .execute(&mut *tx)
                 .await?;
         }
-        tx.commit().await?;
-        Ok(())
+        Ok(current_sequence)
     }
 
     fn deser_event(&self, row: PgRow) -> Result<EventEnvelope<A>, PostgresAggregateError> {
