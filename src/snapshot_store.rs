@@ -18,7 +18,6 @@ use crate::snapshot_repository::PostgresSnapshotRepository;
 ///
 pub struct PostgresSnapshotStore<A: Aggregate> {
     repo: PostgresSnapshotRepository<A>,
-    // TODO: combine event retrieval and remove EventRepository here
     event_repo: PostgresEventRepository<A>,
     _phantom: PhantomData<A>,
 }
@@ -49,7 +48,6 @@ impl<A: Aggregate> EventStore<A> for PostgresSnapshotStore<A> {
     type AC = PostgresSnapshotStoreAggregateContext<A>;
 
     async fn load(&self, aggregate_id: &str) -> Vec<EventEnvelope<A>> {
-        // TODO: combine with event store
         match self.event_repo.get_events(aggregate_id).await {
             Ok(val) => val,
             Err(_err) => {
@@ -88,24 +86,17 @@ impl<A: Aggregate> EventStore<A> for PostgresSnapshotStore<A> {
             context.aggregate.apply(event);
         }
         let aggregate_id = context.aggregate_id.clone();
+        let next_snapshot = context.current_snapshot + 1;
         let wrapped_events =
             self.wrap_events(&aggregate_id, context.current_sequence, events, metadata);
-
-        if context.current_sequence == 0 {
-            self.repo
-                .insert(context.aggregate, aggregate_id, 1, &wrapped_events)
-                .await?;
-        } else {
-            self.repo
-                .update(
-                    context.aggregate,
-                    aggregate_id,
-                    context.current_snapshot + 1,
-                    &wrapped_events,
-                )
-                .await?;
-        }
-
+        self.repo
+            .persist(
+                context.aggregate,
+                aggregate_id,
+                next_snapshot,
+                &wrapped_events,
+            )
+            .await?;
         Ok(wrapped_events)
     }
 }

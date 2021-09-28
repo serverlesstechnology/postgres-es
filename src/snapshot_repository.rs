@@ -52,6 +52,23 @@ where
         Ok(Some(self.deser_snapshot(row)?))
     }
 
+    pub(crate) async fn persist(
+        &self,
+        aggregate: A,
+        aggregate_id: String,
+        current_snapshot: usize,
+        events: &[EventEnvelope<A>],
+    ) -> Result<(), PostgresAggregateError> {
+        if current_snapshot == 1 {
+            self.insert(aggregate, aggregate_id, current_snapshot, &events)
+                .await?;
+        } else {
+            self.update(aggregate, aggregate_id, current_snapshot, &events)
+                .await?;
+        }
+        Ok(())
+    }
+
     pub(crate) async fn insert(
         &self,
         aggregate: A,
