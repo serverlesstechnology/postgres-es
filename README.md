@@ -11,8 +11,8 @@
 
 ```toml
 [dependencies]
-postgres-es = "0.2.0"
-cqrs-es = "0.2.0"
+postgres-es = "0.2.1"
+cqrs-es = "0.2.1"
 ```
 
 ## Usage
@@ -23,6 +23,11 @@ let cqrs = postgres_es::postgres_cqrs(pool, vec![Box::new(my_query)])
 ```
 
 ## Change log
+
+#### `v0.2.1`
+- Moved generic persistence logic into cqrs-es package.
+- Added repositories.
+- Added event context information to event envelope.
 
 #### `v0.2.0`
 Moved to async/await for better tool support.

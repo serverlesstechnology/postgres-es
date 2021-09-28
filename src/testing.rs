@@ -3,8 +3,8 @@ mod tests {
     use std::collections::HashMap;
 
     use cqrs_es::persist::{
-        PersistedEventRepository, PersistedEventStore, PersistedSnapshotEventRepository,
-        PersistedSnapshotStore, SnapshotStoreAggregateContext,
+        GenericQuery, PersistedEventRepository, PersistedEventStore,
+        PersistedSnapshotEventRepository, PersistedSnapshotStore, SnapshotStoreAggregateContext,
     };
     use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, View};
     use serde::{Deserialize, Serialize};
@@ -12,10 +12,11 @@ mod tests {
     use sqlx::{Pool, Postgres};
     use static_assertions::assert_impl_all;
 
+    use crate::default_postgress_pool;
     use crate::event_repository::PostgresEventRepository;
     use crate::postgres_cqrs;
+    use crate::query_repository::PostgresViewRepository;
     use crate::snapshot_repository::PostgresSnapshotRepository;
-    use crate::{default_postgress_pool, GenericQuery};
 
     #[derive(Debug, Serialize, Deserialize, PartialEq)]
     pub struct TestAggregate {
@@ -87,7 +88,8 @@ mod tests {
 
     pub enum TestCommand {}
 
-    type TestQueryRepository = GenericQuery<TestView, TestAggregate>;
+    type TestQueryRepository =
+        GenericQuery<PostgresViewRepository<TestView, TestAggregate>, TestView, TestAggregate>;
 
     #[derive(Debug, Default, Serialize, Deserialize)]
     struct TestView {
@@ -137,33 +139,10 @@ mod tests {
     #[tokio::test]
     async fn test_valid_cqrs_framework() {
         let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
-        let query = TestQueryRepository::new("test_query", pool.clone());
+        let repo =
+            PostgresViewRepository::<TestView, TestAggregate>::new("test_query", pool.clone());
+        let query = TestQueryRepository::new(repo);
         let _ps = postgres_cqrs(pool, vec![Box::new(query)]);
-    }
-
-    #[tokio::test]
-    async fn query() {
-        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
-        let query = TestQueryRepository::new("test_query", pool.clone());
-        let id = uuid::Uuid::new_v4().to_string();
-        query
-            .apply_events(
-                &id,
-                &vec![
-                    test_event_envelope(&id, 1, TestEvent::Created(Created { id: id.clone() })),
-                    test_event_envelope(
-                        &id,
-                        2,
-                        TestEvent::Tested(Tested {
-                            test_name: "a test was run".to_string(),
-                        }),
-                    ),
-                ],
-            )
-            .await
-            .unwrap();
-        let result = query.load(id).await.unwrap();
-        assert_eq!(2, result.events.len())
     }
 
     fn test_event_envelope(

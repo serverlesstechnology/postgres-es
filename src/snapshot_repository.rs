@@ -21,6 +21,7 @@ static SELECT_SNAPSHOT: &str =
                                 FROM snapshots
                                 WHERE aggregate_type = $1 AND aggregate_id = $2";
 
+/// A snapshot backed event repository for use in backing a `PersistedSnapshotStore`.
 pub struct PostgresSnapshotRepository<A> {
     pool: Pool<Postgres>,
     _phantom: PhantomData<A>,
@@ -54,13 +55,19 @@ impl<A> PostgresSnapshotRepository<A>
 where
     A: Aggregate,
 {
+    /// Creates a new `PostgresSnapshotRepository` from the provided database connection
+    /// used for backing a `PersistedSnapshotStore`.
+    ///
+    /// ```ignore
+    /// let store = PostgresSnapshotRepository::<MyAggregate>::new(pool);
+    /// ```
     pub fn new(pool: Pool<Postgres>) -> Self {
         Self {
             pool,
             _phantom: Default::default(),
         }
     }
-    pub async fn get_snapshot_sql(
+    async fn get_snapshot_sql(
         &self,
         aggregate_id: &str,
     ) -> Result<Option<SnapshotStoreAggregateContext<A>>, PostgresAggregateError> {
@@ -78,7 +85,7 @@ where
         Ok(Some(self.deser_snapshot(row)?))
     }
 
-    pub async fn persist_sql(
+    async fn persist_sql(
         &self,
         aggregate: A,
         aggregate_id: String,

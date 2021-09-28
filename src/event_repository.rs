@@ -18,6 +18,7 @@ static SELECT_EVENTS: &str = "SELECT aggregate_type, aggregate_id, sequence, pay
                                 FROM events
                                 WHERE aggregate_type = $1 AND aggregate_id = $2 ORDER BY sequence";
 
+/// A postgres backed event repository for use in backing a `PersistedEventStore`.
 pub struct PostgresEventRepository<A> {
     pool: Pool<Postgres>,
     _phantom: PhantomData<A>,
@@ -27,6 +28,12 @@ impl<A> PostgresEventRepository<A>
 where
     A: Aggregate,
 {
+    /// Creates a new `PostgresEventRepository` from the provided database connection
+    /// used for backing a `PersistedEventStore`.
+    ///
+    /// ```ignore
+    /// let store = PostgresEventRepository::<MyAggregate>::new(pool);
+    /// ```
     pub fn new(pool: Pool<Postgres>) -> Self {
         Self {
             pool,

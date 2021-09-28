@@ -15,17 +15,19 @@
 //!
 //! ```toml
 //! [dependencies]
-//! postgres-es = "0.2.0"
-//! cqrs-es = "0.2.0"
+//! postgres-es = "0.2.1"
+//! cqrs-es = "0.2.1"
 //! ```
 pub use crate::cqrs::*;
-pub use crate::queries::*;
+pub use crate::event_repository::*;
+pub use crate::query_repository::*;
+pub use crate::snapshot_repository::*;
 pub use crate::types::*;
 
 mod cqrs;
 mod error;
 mod event_repository;
-mod queries;
+mod query_repository;
 mod snapshot_repository;
 mod testing;
 mod types;
