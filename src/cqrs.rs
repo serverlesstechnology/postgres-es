@@ -1,7 +1,9 @@
+use cqrs_es::persist::{PersistedEventStore, PersistedSnapshotStore};
 use cqrs_es::{Aggregate, CqrsFramework, Query};
 
-use crate::snapshot_store::PostgresSnapshotStore;
-use crate::{PostgresCqrs, PostgresSnapshotCqrs, PostgresStore};
+use crate::event_repository::PostgresEventRepository;
+use crate::snapshot_repository::PostgresSnapshotRepository;
+use crate::{PostgresCqrs, PostgresSnapshotCqrs};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres};
 
@@ -23,7 +25,8 @@ pub fn postgres_cqrs<A>(
 where
     A: Aggregate,
 {
-    let store = PostgresStore::new(pool);
+    let repo = PostgresEventRepository::new(pool);
+    let store = PersistedEventStore::new(repo);
     CqrsFramework::new(store, query_processor)
 }
 
@@ -35,6 +38,8 @@ pub fn postgres_snapshot_cqrs<A>(
 where
     A: Aggregate,
 {
-    let store = PostgresSnapshotStore::new(pool);
+    let repo = PostgresEventRepository::new(pool.clone());
+    let snapshot_repo = PostgresSnapshotRepository::new(pool);
+    let store = PersistedSnapshotStore::new(snapshot_repo, repo);
     CqrsFramework::new(store, query_processor)
 }

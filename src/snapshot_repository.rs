@@ -1,12 +1,14 @@
-use std::marker::PhantomData;
-
+use async_trait::async_trait;
+use cqrs_es::persist::{
+    PersistedSnapshotEventRepository, PersistenceError, SnapshotStoreAggregateContext,
+};
 use cqrs_es::{Aggregate, EventEnvelope};
 use sqlx::postgres::PgRow;
 use sqlx::{Pool, Postgres, Row, Transaction};
+use std::marker::PhantomData;
 
 use crate::error::PostgresAggregateError;
 use crate::event_repository::PostgresEventRepository;
-use crate::PostgresSnapshotStoreAggregateContext;
 
 static INSERT_SNAPSHOT: &str =
     "INSERT INTO snapshots (aggregate_type, aggregate_id, last_sequence, current_snapshot, payload)
@@ -19,25 +21,49 @@ static SELECT_SNAPSHOT: &str =
                                 FROM snapshots
                                 WHERE aggregate_type = $1 AND aggregate_id = $2";
 
-pub(crate) struct PostgresSnapshotRepository<A> {
+pub struct PostgresSnapshotRepository<A> {
     pool: Pool<Postgres>,
     _phantom: PhantomData<A>,
 }
 
+#[async_trait]
+impl<A> PersistedSnapshotEventRepository<A> for PostgresSnapshotRepository<A>
+where
+    A: Aggregate,
+{
+    async fn get_snapshot(
+        &self,
+        aggregate_id: &str,
+    ) -> Result<Option<SnapshotStoreAggregateContext<A>>, PersistenceError> {
+        Ok(self.get_snapshot_sql(aggregate_id).await?)
+    }
+
+    async fn persist(
+        &self,
+        aggregate: A,
+        aggregate_id: String,
+        current_snapshot: usize,
+        events: &[EventEnvelope<A>],
+    ) -> Result<(), PersistenceError> {
+        Ok(self
+            .persist_sql(aggregate, aggregate_id, current_snapshot, events)
+            .await?)
+    }
+}
 impl<A> PostgresSnapshotRepository<A>
 where
     A: Aggregate,
 {
-    pub(crate) fn new(pool: Pool<Postgres>) -> Self {
+    pub fn new(pool: Pool<Postgres>) -> Self {
         Self {
             pool,
             _phantom: Default::default(),
         }
     }
-    pub(crate) async fn get_snapshot(
+    pub async fn get_snapshot_sql(
         &self,
         aggregate_id: &str,
-    ) -> Result<Option<PostgresSnapshotStoreAggregateContext<A>>, PostgresAggregateError> {
+    ) -> Result<Option<SnapshotStoreAggregateContext<A>>, PostgresAggregateError> {
         let row: PgRow = match sqlx::query(SELECT_SNAPSHOT)
             .bind(A::aggregate_type())
             .bind(&aggregate_id)
@@ -52,7 +78,7 @@ where
         Ok(Some(self.deser_snapshot(row)?))
     }
 
-    pub(crate) async fn persist(
+    pub async fn persist_sql(
         &self,
         aggregate: A,
         aggregate_id: String,
@@ -120,14 +146,14 @@ where
     fn deser_snapshot(
         &self,
         row: PgRow,
-    ) -> Result<PostgresSnapshotStoreAggregateContext<A>, PostgresAggregateError> {
+    ) -> Result<SnapshotStoreAggregateContext<A>, PostgresAggregateError> {
         let aggregate_id = row.get("aggregate_id");
         let s: i64 = row.get("last_sequence");
         let current_sequence = s as usize;
         let s: i64 = row.get("current_snapshot");
         let current_snapshot = s as usize;
         let aggregate: A = serde_json::from_value(row.get("payload"))?;
-        Ok(PostgresSnapshotStoreAggregateContext {
+        Ok(SnapshotStoreAggregateContext {
             aggregate_id,
             aggregate,
             current_sequence,

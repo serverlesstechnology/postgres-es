@@ -2,6 +2,10 @@
 mod tests {
     use std::collections::HashMap;
 
+    use cqrs_es::persist::{
+        PersistedEventRepository, PersistedEventStore, PersistedSnapshotEventRepository,
+        PersistedSnapshotStore, SnapshotStoreAggregateContext,
+    };
     use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, View};
     use serde::{Deserialize, Serialize};
     use serde_json::{Map, Value};
@@ -9,11 +13,9 @@ mod tests {
     use static_assertions::assert_impl_all;
 
     use crate::event_repository::PostgresEventRepository;
+    use crate::postgres_cqrs;
     use crate::snapshot_repository::PostgresSnapshotRepository;
     use crate::{default_postgress_pool, GenericQuery};
-    use crate::{
-        postgres_cqrs, PostgresSnapshotStore, PostgresSnapshotStoreAggregateContext, PostgresStore,
-    };
 
     #[derive(Debug, Serialize, Deserialize, PartialEq)]
     pub struct TestAggregate {
@@ -98,16 +100,31 @@ mod tests {
         }
     }
 
-    assert_impl_all!(rdbmsstore; PostgresStore::<TestAggregate>, EventStore::<TestAggregate>);
+    assert_impl_all!(rdbmsstore; PersistedEventStore::<PostgresEventRepository<TestAggregate>, TestAggregate>, EventStore::<TestAggregate>);
 
     const TEST_CONNECTION_STRING: &str = "postgresql://test_user:test_pass@localhost:5432/test";
 
-    async fn test_store(pool: Pool<Postgres>) -> PostgresStore<TestAggregate> {
-        PostgresStore::<TestAggregate>::new(pool)
+    async fn test_store(
+        pool: Pool<Postgres>,
+    ) -> PersistedEventStore<PostgresEventRepository<TestAggregate>, TestAggregate> {
+        let repo = PostgresEventRepository::new(pool);
+        PersistedEventStore::<PostgresEventRepository<TestAggregate>, TestAggregate>::new(repo)
     }
 
-    async fn test_snapshot_store(pool: Pool<Postgres>) -> PostgresSnapshotStore<TestAggregate> {
-        PostgresSnapshotStore::<TestAggregate>::new(pool)
+    async fn test_snapshot_store(
+        pool: Pool<Postgres>,
+    ) -> PersistedSnapshotStore<
+        PostgresEventRepository<TestAggregate>,
+        PostgresSnapshotRepository<TestAggregate>,
+        TestAggregate,
+    > {
+        let repo = PostgresEventRepository::new(pool.clone());
+        let snapshot_repo = PostgresSnapshotRepository::new(pool);
+        PersistedSnapshotStore::<
+            PostgresEventRepository<TestAggregate>,
+            PostgresSnapshotRepository<TestAggregate>,
+            TestAggregate,
+        >::new(snapshot_repo, repo)
     }
 
     fn test_metadata() -> HashMap<String, String> {
@@ -429,8 +446,8 @@ mod tests {
         current_sequence: usize,
         current_snapshot: usize,
         aggregate: A,
-    ) -> PostgresSnapshotStoreAggregateContext<A> {
-        PostgresSnapshotStoreAggregateContext {
+    ) -> SnapshotStoreAggregateContext<A> {
+        SnapshotStoreAggregateContext {
             aggregate_id,
             aggregate,
             current_sequence,

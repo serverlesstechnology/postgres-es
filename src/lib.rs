@@ -19,17 +19,13 @@
 //! cqrs-es = "0.2.0"
 //! ```
 pub use crate::cqrs::*;
-pub use crate::event_store::*;
 pub use crate::queries::*;
-pub use crate::snapshot_store::*;
 pub use crate::types::*;
 
 mod cqrs;
 mod error;
 mod event_repository;
-mod event_store;
 mod queries;
 mod snapshot_repository;
-mod snapshot_store;
 mod testing;
 mod types;
