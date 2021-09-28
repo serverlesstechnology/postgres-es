@@ -7,6 +7,7 @@ use sqlx::Error;
 #[derive(Debug, PartialEq)]
 pub enum PostgresAggregateError {
     OptimisticLockError,
+    ConnectionError(String),
     UnknownError(String),
 }
 
@@ -15,6 +16,7 @@ impl Display for PostgresAggregateError {
         match self {
             PostgresAggregateError::OptimisticLockError => write!(f, "optimistic lock error"),
             PostgresAggregateError::UnknownError(msg) => write!(f, "{}", msg),
+            PostgresAggregateError::ConnectionError(msg) => write!(f, "{}", msg),
         }
     }
 }
@@ -25,40 +27,28 @@ impl From<sqlx::Error> for PostgresAggregateError {
     fn from(err: sqlx::Error) -> Self {
         // TODO: improve error handling
         match &err {
-            Error::Configuration(_) => {}
             Error::Database(database_error) => {
                 if let Some(code) = database_error.code() {
                     if code.as_ref() == "23505" {
                         return PostgresAggregateError::OptimisticLockError;
                     }
                 }
+                PostgresAggregateError::UnknownError(format!("{:?}", err))
             }
-            Error::Io(_) => {}
-            Error::Tls(_) => {}
-            Error::Protocol(_) => {}
-            Error::RowNotFound => {}
-            Error::TypeNotFound { .. } => {}
-            Error::ColumnIndexOutOfBounds { .. } => {}
-            Error::ColumnNotFound(_) => {}
-            Error::ColumnDecode { .. } => {}
-            Error::Decode(_) => {}
-            Error::PoolTimedOut => {}
-            Error::PoolClosed => {}
-            Error::WorkerCrashed => {}
-            Error::Migrate(_) => {}
-            _ => {}
-        };
-        PostgresAggregateError::UnknownError(format!("{:?}", err))
+            Error::Io(e) => PostgresAggregateError::ConnectionError(e.to_string()),
+            Error::Tls(e) => PostgresAggregateError::ConnectionError(e.to_string()),
+            Error::Protocol(e) => panic!("sql protocol error encountered: {}", e),
+            _ => PostgresAggregateError::UnknownError(format!("{:?}", err)),
+        }
     }
 }
 
 impl From<PostgresAggregateError> for AggregateError {
     fn from(err: PostgresAggregateError) -> Self {
         match err {
-            PostgresAggregateError::OptimisticLockError => {
-                AggregateError::TechnicalError(err.to_string())
-            }
+            PostgresAggregateError::OptimisticLockError => AggregateError::AggregateConflict,
             PostgresAggregateError::UnknownError(msg) => AggregateError::TechnicalError(msg),
+            PostgresAggregateError::ConnectionError(msg) => AggregateError::TechnicalError(msg),
         }
     }
 }
@@ -74,6 +64,7 @@ impl From<PostgresAggregateError> for PersistenceError {
         match err {
             PostgresAggregateError::OptimisticLockError => PersistenceError::OptimisticLockError,
             PostgresAggregateError::UnknownError(msg) => PersistenceError::UnknownError(msg),
+            PostgresAggregateError::ConnectionError(msg) => PersistenceError::ConnectionError(msg),
         }
     }
 }
