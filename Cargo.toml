@@ -1,6 +1,6 @@
 [package]
 name = "postgres-es"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Dave Garred <dave.garred@serverlesstechnology.com>"]
 edition = "2018"
 license-file = "LICENSE"
@@ -11,8 +11,10 @@ documentation = "https://docs.rs/postgres-es"
 readme = "README.md"
 
 [dependencies]
-cqrs-es = "0.2.1"
-persist-es = "0.2.1"
+#cqrs-es = "0.2.2"
+#persist-es = "0.2.2"
+cqrs-es = {path = "../cqrs"}
+persist-es = {path = "../persist-es"}
 
 async-trait = "0.1.51"
 futures = "0.3.17"

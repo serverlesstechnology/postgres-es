@@ -10,14 +10,6 @@
 //! [![Crates.io](https://img.shields.io/crates/v/postgres-es)](https://crates.io/crates/postgres-es)
 //! [![docs](https://img.shields.io/badge/API-docs-blue.svg)](https://docs.rs/postgres-es)
 //!
-//! ## Installation
-//!
-//!
-//! ```toml
-//! [dependencies]
-//! postgres-es = "0.2.1"
-//! cqrs-es = "0.2.1"
-//! ```
 pub use crate::cqrs::*;
 pub use crate::event_repository::*;
 pub use crate::query_repository::*;
