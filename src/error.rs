@@ -6,7 +6,7 @@ use sqlx::Error;
 
 #[derive(Debug, PartialEq)]
 pub enum PostgresAggregateError {
-    OptimisticLockError,
+    OptimisticLock,
     ConnectionError(String),
     UnknownError(String),
 }
@@ -14,7 +14,7 @@ pub enum PostgresAggregateError {
 impl Display for PostgresAggregateError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            PostgresAggregateError::OptimisticLockError => write!(f, "optimistic lock error"),
+            PostgresAggregateError::OptimisticLock => write!(f, "optimistic lock error"),
             PostgresAggregateError::UnknownError(msg) => write!(f, "{}", msg),
             PostgresAggregateError::ConnectionError(msg) => write!(f, "{}", msg),
         }
@@ -30,7 +30,7 @@ impl From<sqlx::Error> for PostgresAggregateError {
             Error::Database(database_error) => {
                 if let Some(code) = database_error.code() {
                     if code.as_ref() == "23505" {
-                        return PostgresAggregateError::OptimisticLockError;
+                        return PostgresAggregateError::OptimisticLock;
                     }
                 }
                 PostgresAggregateError::UnknownError(format!("{:?}", err))
@@ -46,7 +46,7 @@ impl From<sqlx::Error> for PostgresAggregateError {
 impl From<PostgresAggregateError> for AggregateError {
     fn from(err: PostgresAggregateError) -> Self {
         match err {
-            PostgresAggregateError::OptimisticLockError => AggregateError::AggregateConflict,
+            PostgresAggregateError::OptimisticLock => AggregateError::AggregateConflict,
             PostgresAggregateError::UnknownError(msg) => AggregateError::TechnicalError(msg),
             PostgresAggregateError::ConnectionError(msg) => AggregateError::TechnicalError(msg),
         }
@@ -62,7 +62,7 @@ impl From<serde_json::Error> for PostgresAggregateError {
 impl From<PostgresAggregateError> for PersistenceError {
     fn from(err: PostgresAggregateError) -> Self {
         match err {
-            PostgresAggregateError::OptimisticLockError => PersistenceError::OptimisticLockError,
+            PostgresAggregateError::OptimisticLock => PersistenceError::OptimisticLockError,
             PostgresAggregateError::UnknownError(msg) => PersistenceError::UnknownError(msg),
             PostgresAggregateError::ConnectionError(msg) => PersistenceError::ConnectionError(msg),
         }

@@ -60,10 +60,10 @@ where
         events: &[EventEnvelope<A>],
     ) -> Result<(), PersistenceError> {
         if current_snapshot == 1 {
-            self.insert(aggregate, aggregate_id, current_snapshot, &events)
+            self.insert(aggregate, aggregate_id, current_snapshot, events)
                 .await?;
         } else {
-            self.update(aggregate, aggregate_id, current_snapshot, &events)
+            self.update(aggregate, aggregate_id, current_snapshot, events)
                 .await?;
         }
         Ok(())
