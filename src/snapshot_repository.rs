@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use async_trait::async_trait;
 use cqrs_es::persist::{
     PersistedSnapshotEventRepository, PersistenceError, SnapshotStoreAggregateContext,
@@ -5,7 +7,6 @@ use cqrs_es::persist::{
 use cqrs_es::{Aggregate, EventEnvelope};
 use sqlx::postgres::PgRow;
 use sqlx::{Pool, Postgres, Row, Transaction};
-use std::marker::PhantomData;
 
 use crate::error::PostgresAggregateError;
 use crate::event_repository::PostgresEventRepository;
@@ -36,7 +37,19 @@ where
         &self,
         aggregate_id: &str,
     ) -> Result<Option<SnapshotStoreAggregateContext<A>>, PersistenceError> {
-        Ok(self.get_snapshot_sql(aggregate_id).await?)
+        let row: PgRow = match sqlx::query(SELECT_SNAPSHOT)
+            .bind(A::aggregate_type())
+            .bind(&aggregate_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(PostgresAggregateError::from)?
+        {
+            Some(row) => row,
+            None => {
+                return Ok(None);
+            }
+        };
+        Ok(Some(self.deser_snapshot(row)?))
     }
 
     async fn persist(
@@ -46,9 +59,14 @@ where
         current_snapshot: usize,
         events: &[EventEnvelope<A>],
     ) -> Result<(), PersistenceError> {
-        Ok(self
-            .persist_sql(aggregate, aggregate_id, current_snapshot, events)
-            .await?)
+        if current_snapshot == 1 {
+            self.insert(aggregate, aggregate_id, current_snapshot, &events)
+                .await?;
+        } else {
+            self.update(aggregate, aggregate_id, current_snapshot, &events)
+                .await?;
+        }
+        Ok(())
     }
 }
 impl<A> PostgresSnapshotRepository<A>
@@ -66,40 +84,6 @@ where
             pool,
             _phantom: Default::default(),
         }
-    }
-    async fn get_snapshot_sql(
-        &self,
-        aggregate_id: &str,
-    ) -> Result<Option<SnapshotStoreAggregateContext<A>>, PostgresAggregateError> {
-        let row: PgRow = match sqlx::query(SELECT_SNAPSHOT)
-            .bind(A::aggregate_type())
-            .bind(&aggregate_id)
-            .fetch_optional(&self.pool)
-            .await?
-        {
-            Some(row) => row,
-            None => {
-                return Ok(None);
-            }
-        };
-        Ok(Some(self.deser_snapshot(row)?))
-    }
-
-    async fn persist_sql(
-        &self,
-        aggregate: A,
-        aggregate_id: String,
-        current_snapshot: usize,
-        events: &[EventEnvelope<A>],
-    ) -> Result<(), PostgresAggregateError> {
-        if current_snapshot == 1 {
-            self.insert(aggregate, aggregate_id, current_snapshot, &events)
-                .await?;
-        } else {
-            self.update(aggregate, aggregate_id, current_snapshot, &events)
-                .await?;
-        }
-        Ok(())
     }
 
     pub(crate) async fn insert(

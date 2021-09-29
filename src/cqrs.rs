@@ -1,5 +1,6 @@
 use cqrs_es::persist::{PersistedEventStore, PersistedSnapshotStore};
 use cqrs_es::{Aggregate, CqrsFramework, Query};
+use std::sync::Arc;
 
 use crate::event_repository::PostgresEventRepository;
 use crate::snapshot_repository::PostgresSnapshotRepository;
@@ -20,7 +21,7 @@ pub async fn default_postgress_pool(connection_string: &str) -> Pool<Postgres> {
 /// and queries.
 pub fn postgres_cqrs<A>(
     pool: Pool<Postgres>,
-    query_processor: Vec<Box<dyn Query<A>>>,
+    query_processor: Vec<Arc<dyn Query<A>>>,
 ) -> PostgresCqrs<A>
 where
     A: Aggregate,
@@ -33,7 +34,7 @@ where
 /// A convenience function for creating a CqrsFramework using a snapshot store.
 pub fn postgres_snapshot_cqrs<A>(
     pool: Pool<Postgres>,
-    query_processor: Vec<Box<dyn Query<A>>>,
+    query_processor: Vec<Arc<dyn Query<A>>>,
 ) -> PostgresSnapshotCqrs<A>
 where
     A: Aggregate,

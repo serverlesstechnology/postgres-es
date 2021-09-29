@@ -94,44 +94,26 @@ where
         &self,
         aggregate_id: &str,
     ) -> Result<Vec<EventEnvelope<A>>, PersistenceError> {
-        Ok(self.get_events_sql(&aggregate_id).await?)
-    }
-    async fn insert_events(&self, events: Vec<EventEnvelope<A>>) -> Result<(), PersistenceError> {
-        Ok(self.insert_events_sql(events).await?)
-    }
-}
-
-impl<A> PostgresEventRepository<A>
-where
-    A: Aggregate,
-{
-    async fn insert_events_sql(
-        &self,
-        events: Vec<EventEnvelope<A>>,
-    ) -> Result<(), PostgresAggregateError> {
-        let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
-        PostgresEventRepository::<A>::persist_events(&mut tx, events.as_slice()).await?;
-        tx.commit().await?;
-        Ok(())
-    }
-}
-
-impl<A> PostgresEventRepository<A>
-where
-    A: Aggregate,
-{
-    async fn get_events_sql(
-        &self,
-        aggregate_id: &&str,
-    ) -> Result<Vec<EventEnvelope<A>>, PostgresAggregateError> {
         let mut rows = sqlx::query(SELECT_EVENTS)
             .bind(A::aggregate_type())
             .bind(&aggregate_id)
             .fetch(&self.pool);
         let mut result: Vec<EventEnvelope<A>> = Default::default();
-        while let Some(row) = rows.try_next().await? {
+        while let Some(row) = rows
+            .try_next()
+            .await
+            .map_err(PostgresAggregateError::from)?
+        {
             result.push(self.deser_event(row)?);
         }
         Ok(result)
+    }
+    async fn insert_events(&self, events: Vec<EventEnvelope<A>>) -> Result<(), PersistenceError> {
+        let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool)
+            .await
+            .map_err(PostgresAggregateError::from)?;
+        PostgresEventRepository::<A>::persist_events(&mut tx, events.as_slice()).await?;
+        tx.commit().await.map_err(PostgresAggregateError::from)?;
+        Ok(())
     }
 }

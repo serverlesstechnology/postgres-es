@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::sync::Arc;
 
     use cqrs_es::persist::{
         GenericQuery, PersistedEventRepository, PersistedEventStore,
@@ -142,7 +143,7 @@ mod tests {
         let repo =
             PostgresViewRepository::<TestView, TestAggregate>::new("test_query", pool.clone());
         let query = TestQueryRepository::new(repo);
-        let _ps = postgres_cqrs(pool, vec![Box::new(query)]);
+        let _ps = postgres_cqrs(pool, vec![Arc::new(query)]);
     }
 
     fn test_event_envelope(

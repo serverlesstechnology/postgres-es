@@ -46,44 +46,6 @@ where
             _phantom: Default::default(),
         }
     }
-    async fn load_sql(
-        &self,
-        query_instance_id: &str,
-    ) -> Result<Option<(V, QueryContext)>, PostgresAggregateError> {
-        let row: Option<PgRow> = sqlx::query(&self.select_sql)
-            .bind(&query_instance_id)
-            .fetch_optional(&self.pool)
-            .await?;
-        match row {
-            None => Ok(None),
-            Some(row) => {
-                let version = row.get("version");
-                let view = serde_json::from_value(row.get("payload"))?;
-                let view_context = QueryContext::new(query_instance_id.to_string(), version);
-                Ok(Some((view, view_context)))
-            }
-        }
-    }
-
-    async fn update_view_sql(
-        &self,
-        view: V,
-        context: QueryContext,
-    ) -> Result<(), PostgresAggregateError> {
-        let sql = match context.version {
-            0 => &self.insert_sql,
-            _ => &self.update_sql,
-        };
-        let version = context.version + 1;
-        let payload = serde_json::to_value(&view)?;
-        sqlx::query(sql.as_str())
-            .bind(payload)
-            .bind(&version)
-            .bind(context.view_instance_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
 }
 
 #[async_trait]
@@ -96,10 +58,37 @@ where
         &self,
         query_instance_id: &str,
     ) -> Result<Option<(V, QueryContext)>, PersistenceError> {
-        Ok(self.load_sql(query_instance_id).await?)
+        let row: Option<PgRow> = sqlx::query(&self.select_sql)
+            .bind(&query_instance_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(PostgresAggregateError::from)?;
+        match row {
+            None => Ok(None),
+            Some(row) => {
+                let version = row.get("version");
+                let view = serde_json::from_value(row.get("payload"))
+                    .map_err(PostgresAggregateError::from)?;
+                let view_context = QueryContext::new(query_instance_id.to_string(), version);
+                Ok(Some((view, view_context)))
+            }
+        }
     }
 
     async fn update_view(&self, view: V, context: QueryContext) -> Result<(), PersistenceError> {
-        Ok(self.update_view_sql(view, context).await?)
+        let sql = match context.version {
+            0 => &self.insert_sql,
+            _ => &self.update_sql,
+        };
+        let version = context.version + 1;
+        let payload = serde_json::to_value(&view).map_err(PostgresAggregateError::from)?;
+        sqlx::query(sql.as_str())
+            .bind(payload)
+            .bind(&version)
+            .bind(context.view_instance_id)
+            .execute(&self.pool)
+            .await
+            .map_err(PostgresAggregateError::from)?;
+        Ok(())
     }
 }
