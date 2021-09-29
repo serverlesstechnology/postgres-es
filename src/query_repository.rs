@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
 use async_trait::async_trait;
-use cqrs_es::persist::{PersistenceError, QueryContext, ViewRepository};
 use cqrs_es::{Aggregate, View};
+use persist_es::{PersistenceError, QueryContext, ViewRepository};
 use sqlx::postgres::PgRow;
 use sqlx::{Pool, Postgres, Row};
 

@@ -4,7 +4,7 @@ version = "0.2.1"
 authors = ["Dave Garred <dave.garred@serverlesstechnology.com>"]
 edition = "2018"
 license-file = "LICENSE"
-keywords = ["cqrs", "event-sourcing", "serverless", "lambda"]
+keywords = ["cqrs", "event-sourcing", "serverless"]
 description = "A Postgres implementation of an event store for cqrs-es."
 repository = "https://github.com/serverlesstechnology/postgres-es"
 documentation = "https://docs.rs/postgres-es"
@@ -12,7 +12,9 @@ readme = "README.md"
 
 [dependencies]
 #cqrs-es = "0.2.1"
+#persist-es = "0.2.1"
 cqrs-es = {path = "../cqrs"}
+persist-es = {path = "../persist-es"}
 
 async-trait = "0.1.51"
 futures = "0.3.17"

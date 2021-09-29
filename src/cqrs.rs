@@ -1,5 +1,5 @@
-use cqrs_es::persist::{PersistedEventStore, PersistedSnapshotStore};
 use cqrs_es::{Aggregate, CqrsFramework, Query};
+use persist_es::{PersistedEventStore, PersistedSnapshotStore};
 use std::sync::Arc;
 
 use crate::event_repository::PostgresEventRepository;

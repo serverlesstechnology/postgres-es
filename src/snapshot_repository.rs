@@ -1,10 +1,10 @@
 use std::marker::PhantomData;
 
 use async_trait::async_trait;
-use cqrs_es::persist::{
+use cqrs_es::{Aggregate, EventEnvelope};
+use persist_es::{
     PersistedSnapshotEventRepository, PersistenceError, SnapshotStoreAggregateContext,
 };
-use cqrs_es::{Aggregate, EventEnvelope};
 use sqlx::postgres::PgRow;
 use sqlx::{Pool, Postgres, Row, Transaction};
 

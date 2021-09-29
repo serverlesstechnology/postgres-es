@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 
 use async_trait::async_trait;
-use cqrs_es::persist::{PersistedEventRepository, PersistenceError};
 use cqrs_es::{Aggregate, DomainEvent, EventEnvelope};
 use futures::TryStreamExt;
+use persist_es::{PersistedEventRepository, PersistenceError};
 use sqlx::postgres::PgRow;
 use sqlx::Row;
 use sqlx::{Pool, Postgres, Transaction};

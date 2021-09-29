@@ -3,11 +3,11 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    use cqrs_es::persist::{
+    use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, View};
+    use persist_es::{
         GenericQuery, PersistedEventRepository, PersistedEventStore,
         PersistedSnapshotEventRepository, PersistedSnapshotStore, SnapshotStoreAggregateContext,
     };
-    use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, View};
     use serde::{Deserialize, Serialize};
     use serde_json::{Map, Value};
     use sqlx::{Pool, Postgres};
