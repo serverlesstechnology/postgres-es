@@ -11,10 +11,8 @@ documentation = "https://docs.rs/postgres-es"
 readme = "README.md"
 
 [dependencies]
-#cqrs-es = "0.2.1"
-#persist-es = "0.2.1"
-cqrs-es = {path = "../cqrs"}
-persist-es = {path = "../persist-es"}
+cqrs-es = "0.2.1"
+persist-es = "0.2.1"
 
 async-trait = "0.1.51"
 futures = "0.3.17"
