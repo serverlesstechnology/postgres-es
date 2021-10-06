@@ -12,14 +12,13 @@
 //!
 pub use crate::cqrs::*;
 pub use crate::event_repository::*;
+pub use crate::event_repository::*;
 pub use crate::query_repository::*;
-pub use crate::snapshot_repository::*;
 pub use crate::types::*;
 
 mod cqrs;
 mod error;
 mod event_repository;
 mod query_repository;
-mod snapshot_repository;
 mod testing;
 mod types;

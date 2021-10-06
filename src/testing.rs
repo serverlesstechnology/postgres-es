@@ -5,19 +5,17 @@ mod tests {
 
     use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, View};
     use persist_es::{
-        GenericQuery, PersistedEventRepository, PersistedEventStore,
-        PersistedSnapshotEventRepository, PersistedSnapshotStore, SnapshotStoreAggregateContext,
+        GenericQuery, PersistedEventRepository, PersistedEventStore, PersistedSnapshotStore,
+        SnapshotStoreAggregateContext,
     };
     use serde::{Deserialize, Serialize};
     use serde_json::{Map, Value};
     use sqlx::{Pool, Postgres};
     use static_assertions::assert_impl_all;
 
-    use crate::default_postgress_pool;
-    use crate::event_repository::PostgresEventRepository;
     use crate::postgres_cqrs;
     use crate::query_repository::PostgresViewRepository;
-    use crate::snapshot_repository::PostgresSnapshotRepository;
+    use crate::{default_postgress_pool, PostgresEventRepository};
 
     #[derive(Debug, Serialize, Deserialize, PartialEq)]
     pub struct TestAggregate {
@@ -116,18 +114,9 @@ mod tests {
 
     async fn test_snapshot_store(
         pool: Pool<Postgres>,
-    ) -> PersistedSnapshotStore<
-        PostgresEventRepository<TestAggregate>,
-        PostgresSnapshotRepository<TestAggregate>,
-        TestAggregate,
-    > {
+    ) -> PersistedSnapshotStore<PostgresEventRepository<TestAggregate>, TestAggregate> {
         let repo = PostgresEventRepository::new(pool.clone());
-        let snapshot_repo = PostgresSnapshotRepository::new(pool);
-        PersistedSnapshotStore::<
-            PostgresEventRepository<TestAggregate>,
-            PostgresSnapshotRepository<TestAggregate>,
-            TestAggregate,
-        >::new(snapshot_repo, repo)
+        PersistedSnapshotStore::<PostgresEventRepository<TestAggregate>, TestAggregate>::new(repo)
     }
 
     fn test_metadata() -> HashMap<String, String> {
@@ -287,7 +276,7 @@ mod tests {
         assert!(events.is_empty());
 
         event_repo
-            .insert_events(vec![
+            .insert_events(&[
                 test_event_envelope(&id, 1, TestEvent::Created(Created { id: id.clone() })),
                 test_event_envelope(
                     &id,
@@ -304,7 +293,7 @@ mod tests {
         events.iter().for_each(|e| assert_eq!(&id, &e.aggregate_id));
 
         event_repo
-            .insert_events(vec![
+            .insert_events(&[
                 test_event_envelope(
                     &id,
                     3,
@@ -330,8 +319,8 @@ mod tests {
     async fn snapshot_repositories() {
         let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
         let id = uuid::Uuid::new_v4().to_string();
-        let repo: PostgresSnapshotRepository<TestAggregate> =
-            PostgresSnapshotRepository::new(pool.clone());
+        let repo: PostgresEventRepository<TestAggregate> =
+            PostgresEventRepository::new(pool.clone());
         let snapshot = repo.get_snapshot(&id).await.unwrap();
         assert_eq!(None, snapshot);
 

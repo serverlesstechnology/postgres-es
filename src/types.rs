@@ -1,5 +1,4 @@
-use crate::event_repository::PostgresEventRepository;
-use crate::snapshot_repository::PostgresSnapshotRepository;
+use crate::PostgresEventRepository;
 use cqrs_es::CqrsFramework;
 use persist_es::{PersistedEventStore, PersistedSnapshotStore};
 
@@ -9,7 +8,5 @@ pub type PostgresCqrs<A> = CqrsFramework<A, PersistedEventStore<PostgresEventRep
 
 /// A convenience type for a CqrsFramework backed by
 /// [PostgresSnapshotStore](struct.PostgresSnapshotStore.html).
-pub type PostgresSnapshotCqrs<A> = CqrsFramework<
-    A,
-    PersistedSnapshotStore<PostgresEventRepository<A>, PostgresSnapshotRepository<A>, A>,
->;
+pub type PostgresSnapshotCqrs<A> =
+    CqrsFramework<A, PersistedSnapshotStore<PostgresEventRepository<A>, A>>;
