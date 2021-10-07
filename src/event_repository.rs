@@ -19,16 +19,6 @@ static SELECT_EVENTS: &str = "SELECT aggregate_type, aggregate_id, sequence, pay
                                 WHERE aggregate_type = $1 
                                   AND aggregate_id = $2 ORDER BY sequence";
 
-// static FUTURE_SELECT_EVENTS: &str =
-//     "SELECT aggregate_type, aggregate_id, sequence, payload, metadata
-//                                 FROM events
-//                                 WHERE aggregate_type = $1 AND aggregate_id = $2
-//                                   AND sequence > (SELECT max(sequence)
-//                                                   FROM events
-//                                                   WHERE aggregate_type = $1
-//                                                     AND aggregate_id = $2) - 2
-//                                 ORDER BY sequence";
-
 static INSERT_SNAPSHOT: &str =
     "INSERT INTO snapshots (aggregate_type, aggregate_id, last_sequence, current_snapshot, payload)
                                VALUES ($1, $2, $3, $4, $5)";
@@ -55,19 +45,27 @@ where
         &self,
         aggregate_id: &str,
     ) -> Result<Vec<EventEnvelope<A>>, PersistenceError> {
-        let mut rows = sqlx::query(SELECT_EVENTS)
-            .bind(A::aggregate_type())
-            .bind(&aggregate_id)
-            .fetch(&self.pool);
-        let mut result: Vec<EventEnvelope<A>> = Default::default();
-        while let Some(row) = rows
-            .try_next()
-            .await
-            .map_err(PostgresAggregateError::from)?
-        {
-            result.push(self.deser_event(row)?);
-        }
-        Ok(result)
+        let query = SELECT_EVENTS;
+        self.select_events(aggregate_id, query).await
+    }
+
+    async fn get_last_events(
+        &self,
+        aggregate_id: &str,
+        number_events: usize,
+    ) -> Result<Vec<EventEnvelope<A>>, PersistenceError> {
+        let query = format!(
+            "SELECT aggregate_type, aggregate_id, sequence, payload, metadata
+                                FROM events
+                                WHERE aggregate_type = $1 AND aggregate_id = $2
+                                  AND sequence > (SELECT max(sequence)
+                                                  FROM events
+                                                  WHERE aggregate_type = $1
+                                                    AND aggregate_id = $2) - {}
+                                ORDER BY sequence",
+            number_events
+        );
+        self.select_events(aggregate_id, &query).await
     }
 
     async fn get_snapshot(
@@ -111,6 +109,32 @@ where
         Ok(())
     }
 }
+
+impl<A> PostgresEventRepository<A>
+where
+    A: Aggregate,
+{
+    async fn select_events(
+        &self,
+        aggregate_id: &str,
+        query: &str,
+    ) -> Result<Vec<EventEnvelope<A>>, PersistenceError> {
+        let mut rows = sqlx::query(query)
+            .bind(A::aggregate_type())
+            .bind(aggregate_id)
+            .fetch(&self.pool);
+        let mut result: Vec<EventEnvelope<A>> = Default::default();
+        while let Some(row) = rows
+            .try_next()
+            .await
+            .map_err(PostgresAggregateError::from)?
+        {
+            result.push(self.deser_event(row)?);
+        }
+        Ok(result)
+    }
+}
+
 impl<A> PostgresEventRepository<A>
 where
     A: Aggregate,

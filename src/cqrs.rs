@@ -37,7 +37,7 @@ pub fn postgres_snapshot_cqrs<A>(
 where
     A: Aggregate,
 {
-    let repo = PostgresEventRepository::new(pool.clone());
+    let repo = PostgresEventRepository::new(pool);
     let store = PersistedSnapshotStore::new(repo);
     CqrsFramework::new(store, query_processor)
 }
