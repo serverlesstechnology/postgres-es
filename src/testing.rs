@@ -6,7 +6,7 @@ mod tests {
     use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, View};
     use persist_es::{
         GenericQuery, PersistedEventRepository, PersistedEventStore, PersistedSnapshotStore,
-        SnapshotStoreAggregateContext,
+        SerializedEvent, SerializedSnapshot,
     };
     use serde::{Deserialize, Serialize};
     use serde_json::{Map, Value};
@@ -101,22 +101,22 @@ mod tests {
         }
     }
 
-    assert_impl_all!(rdbmsstore; PersistedEventStore::<PostgresEventRepository<TestAggregate>, TestAggregate>, EventStore::<TestAggregate>);
+    assert_impl_all!(rdbmsstore; PersistedEventStore::<PostgresEventRepository, TestAggregate>, EventStore::<TestAggregate>);
 
     const TEST_CONNECTION_STRING: &str = "postgresql://test_user:test_pass@localhost:5432/test";
 
     async fn test_store(
         pool: Pool<Postgres>,
-    ) -> PersistedEventStore<PostgresEventRepository<TestAggregate>, TestAggregate> {
-        let repo = PostgresEventRepository::new(pool);
-        PersistedEventStore::<PostgresEventRepository<TestAggregate>, TestAggregate>::new(repo)
+    ) -> PersistedEventStore<PostgresEventRepository, TestAggregate> {
+        let repo = PostgresEventRepository::new(TestAggregate::aggregate_type(), pool);
+        PersistedEventStore::<PostgresEventRepository, TestAggregate>::new(repo)
     }
 
     async fn test_snapshot_store(
         pool: Pool<Postgres>,
-    ) -> PersistedSnapshotStore<PostgresEventRepository<TestAggregate>, TestAggregate> {
-        let repo = PostgresEventRepository::new(pool.clone());
-        PersistedSnapshotStore::<PostgresEventRepository<TestAggregate>, TestAggregate>::new(repo)
+    ) -> PersistedSnapshotStore<PostgresEventRepository, TestAggregate> {
+        let repo = PostgresEventRepository::new(TestAggregate::aggregate_type(), pool.clone());
+        PersistedSnapshotStore::<PostgresEventRepository, TestAggregate>::new(repo)
     }
 
     fn test_metadata() -> HashMap<String, String> {
@@ -135,17 +135,14 @@ mod tests {
         let _ps = postgres_cqrs(pool, vec![Arc::new(query)]);
     }
 
-    fn test_event_envelope(
-        id: &str,
-        sequence: usize,
-        payload: TestEvent,
-    ) -> EventEnvelope<TestAggregate> {
-        EventEnvelope {
+    fn test_event_envelope(id: &str, sequence: usize, event: TestEvent) -> SerializedEvent {
+        let payload: Value = serde_json::to_value(&event).unwrap();
+        SerializedEvent {
             aggregate_id: id.to_string(),
             sequence,
             aggregate_type: TestAggregate::aggregate_type().to_string(),
-            event_type: payload.event_type().to_string(),
-            event_version: payload.event_version().to_string(),
+            event_type: event.event_type().to_string(),
+            event_version: event.event_version().to_string(),
             payload,
             metadata: Default::default(),
         }
@@ -270,8 +267,8 @@ mod tests {
     async fn event_repositories() {
         let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
         let id = uuid::Uuid::new_v4().to_string();
-        let event_repo: PostgresEventRepository<TestAggregate> =
-            PostgresEventRepository::new(pool.clone());
+        let event_repo: PostgresEventRepository =
+            PostgresEventRepository::new(TestAggregate::aggregate_type(), pool.clone());
         let events = event_repo.get_events(&id).await.unwrap();
         assert!(events.is_empty());
 
@@ -319,19 +316,20 @@ mod tests {
     async fn snapshot_repositories() {
         let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
         let id = uuid::Uuid::new_v4().to_string();
-        let repo: PostgresEventRepository<TestAggregate> =
-            PostgresEventRepository::new(pool.clone());
+        let repo: PostgresEventRepository =
+            PostgresEventRepository::new(TestAggregate::aggregate_type(), pool.clone());
         let snapshot = repo.get_snapshot(&id).await.unwrap();
         assert_eq!(None, snapshot);
 
         let test_description = "some test snapshot here".to_string();
         let test_tests = vec!["testA".to_string(), "testB".to_string()];
         repo.insert(
-            TestAggregate {
+            serde_json::to_value(TestAggregate {
                 id: id.clone(),
                 description: test_description.clone(),
                 tests: test_tests.clone(),
-            },
+            })
+            .unwrap(),
             id.clone(),
             1,
             &vec![],
@@ -344,22 +342,24 @@ mod tests {
                 id.clone(),
                 0,
                 1,
-                TestAggregate {
+                serde_json::to_value(TestAggregate {
                     id: id.clone(),
                     description: test_description.clone(),
                     tests: test_tests.clone(),
-                }
+                })
+                .unwrap()
             )),
             snapshot
         );
 
         // sequence iterated, does update
         repo.update(
-            TestAggregate {
+            serde_json::to_value(TestAggregate {
                 id: id.clone(),
                 description: "a test description that should be saved".to_string(),
                 tests: test_tests.clone(),
-            },
+            })
+            .unwrap(),
             id.clone(),
             2,
             &vec![],
@@ -372,22 +372,24 @@ mod tests {
                 id.clone(),
                 0,
                 2,
-                TestAggregate {
+                serde_json::to_value(TestAggregate {
                     id: id.clone(),
                     description: "a test description that should be saved".to_string(),
                     tests: test_tests.clone(),
-                }
+                })
+                .unwrap()
             )),
             snapshot
         );
 
         // sequence out of order or not iterated, does not update
         repo.update(
-            TestAggregate {
+            serde_json::to_value(TestAggregate {
                 id: id.clone(),
                 description: "a test description that should not be saved".to_string(),
                 tests: test_tests.clone(),
-            },
+            })
+            .unwrap(),
             id.clone(),
             2,
             &vec![],
@@ -400,23 +402,24 @@ mod tests {
                 id.clone(),
                 0,
                 2,
-                TestAggregate {
+                serde_json::to_value(TestAggregate {
                     id: id.clone(),
                     description: "a test description that should be saved".to_string(),
                     tests: test_tests.clone(),
-                }
+                })
+                .unwrap()
             )),
             snapshot
         );
     }
 
-    fn snapshot_context<A: Aggregate>(
+    fn snapshot_context(
         aggregate_id: String,
         current_sequence: usize,
         current_snapshot: usize,
-        aggregate: A,
-    ) -> SnapshotStoreAggregateContext<A> {
-        SnapshotStoreAggregateContext {
+        aggregate: Value,
+    ) -> SerializedSnapshot {
+        SerializedSnapshot {
             aggregate_id,
             aggregate,
             current_sequence,

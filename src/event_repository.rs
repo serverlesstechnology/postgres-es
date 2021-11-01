@@ -1,10 +1,8 @@
 use futures::TryStreamExt;
-use std::collections::HashMap;
-use std::marker::PhantomData;
 
 use async_trait::async_trait;
-use cqrs_es::{Aggregate, DomainEvent, EventEnvelope};
-use persist_es::{PersistedEventRepository, PersistenceError, SnapshotStoreAggregateContext};
+use persist_es::{PersistedEventRepository, PersistenceError, SerializedEvent, SerializedSnapshot};
+use serde_json::Value;
 use sqlx::postgres::PgRow;
 use sqlx::{Pool, Postgres, Row, Transaction};
 
@@ -14,7 +12,8 @@ static INSERT_EVENT: &str =
     "INSERT INTO events (aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata)
                                VALUES ($1, $2, $3, $4, $5, $6, $7)";
 
-static SELECT_EVENTS: &str = "SELECT aggregate_type, aggregate_id, sequence, payload, metadata
+static SELECT_EVENTS: &str =
+    "SELECT aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata
                                 FROM events
                                 WHERE aggregate_type = $1 
                                   AND aggregate_id = $2 ORDER BY sequence";
@@ -31,20 +30,17 @@ static SELECT_SNAPSHOT: &str =
                                 WHERE aggregate_type = $1 AND aggregate_id = $2";
 
 /// A snapshot backed event repository for use in backing a `PersistedSnapshotStore`.
-pub struct PostgresEventRepository<A> {
+pub struct PostgresEventRepository {
     pool: Pool<Postgres>,
-    _phantom: PhantomData<A>,
+    aggregate_type: String,
 }
 
 #[async_trait]
-impl<A> PersistedEventRepository<A> for PostgresEventRepository<A>
-where
-    A: Aggregate,
-{
+impl PersistedEventRepository for PostgresEventRepository {
     async fn get_events(
         &self,
         aggregate_id: &str,
-    ) -> Result<Vec<EventEnvelope<A>>, PersistenceError> {
+    ) -> Result<Vec<SerializedEvent>, PersistenceError> {
         let query = SELECT_EVENTS;
         self.select_events(aggregate_id, query).await
     }
@@ -53,7 +49,7 @@ where
         &self,
         aggregate_id: &str,
         number_events: usize,
-    ) -> Result<Vec<EventEnvelope<A>>, PersistenceError> {
+    ) -> Result<Vec<SerializedEvent>, PersistenceError> {
         let query = format!(
             "SELECT aggregate_type, aggregate_id, sequence, payload, metadata
                                 FROM events
@@ -71,9 +67,9 @@ where
     async fn get_snapshot(
         &self,
         aggregate_id: &str,
-    ) -> Result<Option<SnapshotStoreAggregateContext<A>>, PersistenceError> {
+    ) -> Result<Option<SerializedSnapshot>, PersistenceError> {
         let row: PgRow = match sqlx::query(SELECT_SNAPSHOT)
-            .bind(A::aggregate_type())
+            .bind(&self.aggregate_type)
             .bind(&aggregate_id)
             .fetch_optional(&self.pool)
             .await
@@ -89,8 +85,8 @@ where
 
     async fn persist(
         &self,
-        events: &[EventEnvelope<A>],
-        snapshot_update: Option<(String, A, usize)>,
+        events: &[SerializedEvent],
+        snapshot_update: Option<(String, Value, usize)>,
     ) -> Result<(), PersistenceError> {
         match snapshot_update {
             None => {
@@ -110,20 +106,17 @@ where
     }
 }
 
-impl<A> PostgresEventRepository<A>
-where
-    A: Aggregate,
-{
+impl PostgresEventRepository {
     async fn select_events(
         &self,
         aggregate_id: &str,
         query: &str,
-    ) -> Result<Vec<EventEnvelope<A>>, PersistenceError> {
+    ) -> Result<Vec<SerializedEvent>, PersistenceError> {
         let mut rows = sqlx::query(query)
-            .bind(A::aggregate_type())
+            .bind(&self.aggregate_type)
             .bind(aggregate_id)
             .fetch(&self.pool);
-        let mut result: Vec<EventEnvelope<A>> = Default::default();
+        let mut result: Vec<SerializedEvent> = Default::default();
         while let Some(row) = rows
             .try_next()
             .await
@@ -135,46 +128,41 @@ where
     }
 }
 
-impl<A> PostgresEventRepository<A>
-where
-    A: Aggregate,
-{
+impl PostgresEventRepository {
     /// Creates a new `PostgresEventRepository` from the provided database connection
     /// used for backing a `PersistedSnapshotStore`.
     ///
     /// ```ignore
     /// let store = PostgresEventRepository::<MyAggregate>::new(pool);
     /// ```
-    pub fn new(pool: Pool<Postgres>) -> Self {
+    pub fn new(aggregate_type: &str, pool: Pool<Postgres>) -> Self {
         Self {
             pool,
-            _phantom: Default::default(),
+            aggregate_type: aggregate_type.to_string(),
         }
     }
 
     pub(crate) async fn insert_events(
         &self,
-        events: &[EventEnvelope<A>],
+        events: &[SerializedEvent],
     ) -> Result<(), PostgresAggregateError> {
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
-        PostgresEventRepository::<A>::persist_events(&mut tx, events).await?;
+        self.persist_events(&mut tx, events).await?;
         tx.commit().await?;
         Ok(())
     }
 
     pub(crate) async fn insert(
         &self,
-        aggregate: A,
+        aggregate_payload: Value,
         aggregate_id: String,
         current_snapshot: usize,
-        events: &[EventEnvelope<A>],
+        events: &[SerializedEvent],
     ) -> Result<(), PostgresAggregateError> {
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
-        let current_sequence =
-            PostgresEventRepository::<A>::persist_events(&mut tx, events).await?;
-        let aggregate_payload = serde_json::to_value(&aggregate)?;
+        let current_sequence = self.persist_events(&mut tx, events).await?;
         sqlx::query(INSERT_SNAPSHOT)
-            .bind(A::aggregate_type())
+            .bind(&self.aggregate_type)
             .bind(aggregate_id.as_str())
             .bind(current_sequence as u32)
             .bind(current_snapshot as u32)
@@ -187,18 +175,17 @@ where
 
     pub(crate) async fn update(
         &self,
-        aggregate: A,
+        aggregate: Value,
         aggregate_id: String,
         current_snapshot: usize,
-        events: &[EventEnvelope<A>],
+        events: &[SerializedEvent],
     ) -> Result<(), PostgresAggregateError> {
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
-        let current_sequence =
-            PostgresEventRepository::<A>::persist_events(&mut tx, events).await?;
+        let current_sequence = self.persist_events(&mut tx, events).await?;
 
         let aggregate_payload = serde_json::to_value(&aggregate)?;
         sqlx::query(UPDATE_SNAPSHOT)
-            .bind(A::aggregate_type())
+            .bind(&self.aggregate_type)
             .bind(aggregate_id.as_str())
             .bind(current_sequence as u32)
             .bind(current_snapshot as u32)
@@ -210,35 +197,36 @@ where
         Ok(())
     }
 
-    fn deser_event(&self, row: PgRow) -> Result<EventEnvelope<A>, PostgresAggregateError> {
+    fn deser_event(&self, row: PgRow) -> Result<SerializedEvent, PostgresAggregateError> {
         let aggregate_type: String = row.get("aggregate_type");
         let aggregate_id: String = row.get("aggregate_id");
         let sequence = {
             let s: i64 = row.get("sequence");
             s as usize
         };
-        let payload: A::Event = serde_json::from_value(row.get("payload"))?;
-        let metadata: HashMap<String, String> = serde_json::from_value(row.get("metadata"))?;
-        Ok(EventEnvelope::new_with_metadata(
+        let event_type: String = row.get("event_type");
+        let event_version: String = row.get("event_version");
+        let payload: Value = row.get("payload");
+        let metadata: Value = row.get("metadata");
+        Ok(SerializedEvent::new(
             aggregate_id,
             sequence,
             aggregate_type,
+            event_type,
+            event_version,
             payload,
             metadata,
         ))
     }
 
-    fn deser_snapshot(
-        &self,
-        row: PgRow,
-    ) -> Result<SnapshotStoreAggregateContext<A>, PostgresAggregateError> {
+    fn deser_snapshot(&self, row: PgRow) -> Result<SerializedSnapshot, PostgresAggregateError> {
         let aggregate_id = row.get("aggregate_id");
         let s: i64 = row.get("last_sequence");
         let current_sequence = s as usize;
         let s: i64 = row.get("current_snapshot");
         let current_snapshot = s as usize;
-        let aggregate: A = serde_json::from_value(row.get("payload"))?;
-        Ok(SnapshotStoreAggregateContext {
+        let aggregate: Value = row.get("payload");
+        Ok(SerializedSnapshot {
             aggregate_id,
             aggregate,
             current_sequence,
@@ -247,18 +235,19 @@ where
     }
 
     pub(crate) async fn persist_events(
+        &self,
         tx: &mut Transaction<'_, Postgres>,
-        events: &[EventEnvelope<A>],
+        events: &[SerializedEvent],
     ) -> Result<usize, PostgresAggregateError> {
         let mut current_sequence: usize = 0;
         for event in events {
             current_sequence = event.sequence;
-            let event_type = event.payload.event_type();
-            let event_version = event.payload.event_version();
+            let event_type = &event.event_type;
+            let event_version = &event.event_version;
             let payload = serde_json::to_value(&event.payload)?;
             let metadata = serde_json::to_value(&event.metadata)?;
             sqlx::query(INSERT_EVENT)
-                .bind(A::aggregate_type())
+                .bind(&self.aggregate_type)
                 .bind(event.aggregate_id.as_str())
                 .bind(event.sequence as u32)
                 .bind(event_type)
