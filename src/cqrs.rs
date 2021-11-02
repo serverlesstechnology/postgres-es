@@ -24,7 +24,7 @@ pub fn postgres_cqrs<A>(
 where
     A: Aggregate,
 {
-    let repo = PostgresEventRepository::new(A::aggregate_type(), pool);
+    let repo = PostgresEventRepository::new(pool);
     let store = PersistedEventStore::new(repo);
     CqrsFramework::new(store, query_processor)
 }
@@ -37,7 +37,7 @@ pub fn postgres_snapshot_cqrs<A>(
 where
     A: Aggregate,
 {
-    let repo = PostgresEventRepository::new(A::aggregate_type(), pool);
+    let repo = PostgresEventRepository::new(pool);
     let store = PersistedSnapshotStore::new(repo);
     CqrsFramework::new(store, query_processor)
 }

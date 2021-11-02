@@ -108,14 +108,14 @@ mod tests {
     async fn test_store(
         pool: Pool<Postgres>,
     ) -> PersistedEventStore<PostgresEventRepository, TestAggregate> {
-        let repo = PostgresEventRepository::new(TestAggregate::aggregate_type(), pool);
+        let repo = PostgresEventRepository::new(pool);
         PersistedEventStore::<PostgresEventRepository, TestAggregate>::new(repo)
     }
 
     async fn test_snapshot_store(
         pool: Pool<Postgres>,
     ) -> PersistedSnapshotStore<PostgresEventRepository, TestAggregate> {
-        let repo = PostgresEventRepository::new(TestAggregate::aggregate_type(), pool.clone());
+        let repo = PostgresEventRepository::new(pool.clone());
         PersistedSnapshotStore::<PostgresEventRepository, TestAggregate>::new(repo)
     }
 
@@ -267,13 +267,12 @@ mod tests {
     async fn event_repositories() {
         let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
         let id = uuid::Uuid::new_v4().to_string();
-        let event_repo: PostgresEventRepository =
-            PostgresEventRepository::new(TestAggregate::aggregate_type(), pool.clone());
-        let events = event_repo.get_events(&id).await.unwrap();
+        let event_repo: PostgresEventRepository = PostgresEventRepository::new(pool.clone());
+        let events = event_repo.get_events::<TestAggregate>(&id).await.unwrap();
         assert!(events.is_empty());
 
         event_repo
-            .insert_events(&[
+            .insert_events::<TestAggregate>(&[
                 test_event_envelope(&id, 1, TestEvent::Created(Created { id: id.clone() })),
                 test_event_envelope(
                     &id,
@@ -285,12 +284,12 @@ mod tests {
             ])
             .await
             .unwrap();
-        let events = event_repo.get_events(&id).await.unwrap();
+        let events = event_repo.get_events::<TestAggregate>(&id).await.unwrap();
         assert_eq!(2, events.len());
         events.iter().for_each(|e| assert_eq!(&id, &e.aggregate_id));
 
         event_repo
-            .insert_events(&[
+            .insert_events::<TestAggregate>(&[
                 test_event_envelope(
                     &id,
                     3,
@@ -308,7 +307,7 @@ mod tests {
             ])
             .await
             .unwrap_err();
-        let events = event_repo.get_events(&id).await.unwrap();
+        let events = event_repo.get_events::<TestAggregate>(&id).await.unwrap();
         assert_eq!(2, events.len());
     }
 
@@ -316,14 +315,13 @@ mod tests {
     async fn snapshot_repositories() {
         let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
         let id = uuid::Uuid::new_v4().to_string();
-        let repo: PostgresEventRepository =
-            PostgresEventRepository::new(TestAggregate::aggregate_type(), pool.clone());
-        let snapshot = repo.get_snapshot(&id).await.unwrap();
+        let repo: PostgresEventRepository = PostgresEventRepository::new(pool.clone());
+        let snapshot = repo.get_snapshot::<TestAggregate>(&id).await.unwrap();
         assert_eq!(None, snapshot);
 
         let test_description = "some test snapshot here".to_string();
         let test_tests = vec!["testA".to_string(), "testB".to_string()];
-        repo.insert(
+        repo.insert::<TestAggregate>(
             serde_json::to_value(TestAggregate {
                 id: id.clone(),
                 description: test_description.clone(),
@@ -336,7 +334,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let snapshot = repo.get_snapshot(&id).await.unwrap();
+        let snapshot = repo.get_snapshot::<TestAggregate>(&id).await.unwrap();
         assert_eq!(
             Some(snapshot_context(
                 id.clone(),
@@ -353,7 +351,7 @@ mod tests {
         );
 
         // sequence iterated, does update
-        repo.update(
+        repo.update::<TestAggregate>(
             serde_json::to_value(TestAggregate {
                 id: id.clone(),
                 description: "a test description that should be saved".to_string(),
@@ -366,7 +364,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let snapshot = repo.get_snapshot(&id).await.unwrap();
+        let snapshot = repo.get_snapshot::<TestAggregate>(&id).await.unwrap();
         assert_eq!(
             Some(snapshot_context(
                 id.clone(),
@@ -383,7 +381,7 @@ mod tests {
         );
 
         // sequence out of order or not iterated, does not update
-        repo.update(
+        repo.update::<TestAggregate>(
             serde_json::to_value(TestAggregate {
                 id: id.clone(),
                 description: "a test description that should not be saved".to_string(),
@@ -396,7 +394,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let snapshot = repo.get_snapshot(&id).await.unwrap();
+        let snapshot = repo.get_snapshot::<TestAggregate>(&id).await.unwrap();
         assert_eq!(
             Some(snapshot_context(
                 id.clone(),
