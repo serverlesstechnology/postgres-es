@@ -11,7 +11,6 @@ mod tests {
     use serde::{Deserialize, Serialize};
     use serde_json::{Map, Value};
     use sqlx::{Pool, Postgres};
-    use static_assertions::assert_impl_all;
 
     use crate::postgres_cqrs;
     use crate::query_repository::PostgresViewRepository;
@@ -100,8 +99,6 @@ mod tests {
             self.events.push(event.payload.clone());
         }
     }
-
-    assert_impl_all!(rdbmsstore; PersistedEventStore::<PostgresEventRepository, TestAggregate>, EventStore::<TestAggregate>);
 
     const TEST_CONNECTION_STRING: &str = "postgresql://test_user:test_pass@localhost:5432/test";
 

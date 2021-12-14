@@ -1,8 +1,8 @@
 [package]
 name = "postgres-es"
-version = "0.2.3"
+version = "0.2.4"
 authors = ["Dave Garred <dave.garred@serverlesstechnology.com>"]
-edition = "2018"
+edition = "2021"
 license-file = "LICENSE"
 keywords = ["cqrs", "event-sourcing", "serverless"]
 description = "A Postgres implementation of an event store for cqrs-es."
@@ -11,16 +11,15 @@ documentation = "https://docs.rs/postgres-es"
 readme = "README.md"
 
 [dependencies]
-cqrs-es = "0.2.3"
-persist-es = "0.2.3"
+cqrs-es = "0.2.4"
+persist-es = "0.2.4"
 
-async-trait = "0.1.51"
+async-trait = "0.1.52"
 futures = "0.3.17"
-serde = { version = "1.0.126", features = ["derive"]}
-serde_json = "1.0.64"
-sqlx = { version = "0.5.7", features = [ "postgres" , "runtime-tokio-rustls", "json"] }
-tokio = { version = "1.12.0", features = ["macros", "rt"] }
+serde = { version = "1.0", features = ["derive"]}
+serde_json = "1.0"
+sqlx = { version = "0.5.9", features = [ "postgres" , "runtime-tokio-rustls", "json"] }
 
 [dev-dependencies]
-static_assertions = "0.3"
+tokio = { version = "1", features = ["macros", "rt"] }
 uuid = { version = "0.8.2", features = ["v4"]}
