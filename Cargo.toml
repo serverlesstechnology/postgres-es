@@ -12,8 +12,7 @@ readme = "README.md"
 
 [dependencies]
 cqrs-es = "0.2.3"
-persist-es = {path = "../persist-es"}
-#persist-es = "0.2.3"
+persist-es = "0.2.3"
 
 async-trait = "0.1.51"
 futures = "0.3.17"
