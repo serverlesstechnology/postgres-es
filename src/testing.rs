@@ -3,7 +3,9 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, View};
+    use cqrs_es::{
+        Aggregate, AggregateError, DomainEvent, EventEnvelope, EventStore, UserErrorPayload, View,
+    };
     use persist_es::{
         GenericQuery, PersistedEventRepository, PersistedEventStore, PersistedSnapshotStore,
         SerializedEvent, SerializedSnapshot,
@@ -26,12 +28,16 @@ mod tests {
     impl Aggregate for TestAggregate {
         type Command = TestCommand;
         type Event = TestEvent;
+        type Error = UserErrorPayload;
 
         fn aggregate_type() -> &'static str {
             "TestAggregate"
         }
 
-        fn handle(&self, _command: Self::Command) -> Result<Vec<Self::Event>, AggregateError> {
+        fn handle(
+            &self,
+            _command: Self::Command,
+        ) -> Result<Vec<Self::Event>, AggregateError<Self::Error>> {
             Ok(vec![])
         }
 

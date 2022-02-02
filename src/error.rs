@@ -43,7 +43,7 @@ impl From<sqlx::Error> for PostgresAggregateError {
     }
 }
 
-impl From<PostgresAggregateError> for AggregateError {
+impl<T: std::error::Error> From<PostgresAggregateError> for AggregateError<T> {
     fn from(err: PostgresAggregateError) -> Self {
         match err {
             PostgresAggregateError::OptimisticLock => AggregateError::AggregateConflict,
