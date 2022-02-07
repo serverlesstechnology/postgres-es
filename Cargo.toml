@@ -23,7 +23,3 @@ sqlx = { version = "0.5.10", features = [ "postgres" , "runtime-tokio-rustls", "
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }
 uuid = { version = "0.8.2", features = ["v4"]}
-
-[patch.crates-io]
-cqrs-es = { path = "../cqrs" }
-persist-es = { path = "../persist-es" }
