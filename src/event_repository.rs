@@ -181,7 +181,7 @@ impl PostgresEventRepository {
         let current_sequence = self.persist_events::<A>(&mut tx, events).await?;
 
         let aggregate_payload = serde_json::to_value(&aggregate)?;
-        sqlx::query(UPDATE_SNAPSHOT)
+        let result = sqlx::query(UPDATE_SNAPSHOT)
             .bind(A::aggregate_type())
             .bind(aggregate_id.as_str())
             .bind(current_sequence as u32)
@@ -191,7 +191,10 @@ impl PostgresEventRepository {
             .execute(&mut tx)
             .await?;
         tx.commit().await?;
-        Ok(())
+        match result.rows_affected() {
+            1 => Ok(()),
+            _ => Err(PostgresAggregateError::OptimisticLock),
+        }
     }
 
     fn deser_event(&self, row: PgRow) -> Result<SerializedEvent, PostgresAggregateError> {
@@ -255,5 +258,260 @@ impl PostgresEventRepository {
                 .await?;
         }
         Ok(current_sequence)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::error::PostgresAggregateError;
+    use crate::testing::tests::{
+        new_test_event_store, new_test_metadata, new_test_snapshot_store, snapshot_context,
+        test_event_envelope, Created, SomethingElse, TestAggregate, TestEvent, Tested,
+        TEST_CONNECTION_STRING,
+    };
+    use crate::{default_postgress_pool, PostgresEventRepository};
+    use cqrs_es::EventStore;
+    use persist_es::PersistedEventRepository;
+
+    #[tokio::test]
+    async fn commit_and_load_events() {
+        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
+        let event_store = new_test_event_store(pool).await;
+        let id = uuid::Uuid::new_v4().to_string();
+        assert_eq!(0, event_store.load(id.as_str()).await.len());
+        let context = event_store.load_aggregate(id.as_str()).await;
+
+        event_store
+            .commit(
+                vec![
+                    TestEvent::Created(Created {
+                        id: "test_event_A".to_string(),
+                    }),
+                    TestEvent::Tested(Tested {
+                        test_name: "test A".to_string(),
+                    }),
+                ],
+                context,
+                new_test_metadata(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(2, event_store.load(id.as_str()).await.len());
+        let context = event_store.load_aggregate(id.as_str()).await;
+
+        event_store
+            .commit(
+                vec![TestEvent::Tested(Tested {
+                    test_name: "test B".to_string(),
+                })],
+                context,
+                new_test_metadata(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(3, event_store.load(id.as_str()).await.len());
+    }
+
+    #[tokio::test]
+    async fn commit_and_load_events_snapshot_store() {
+        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
+        let event_store = new_test_snapshot_store(pool).await;
+        let id = uuid::Uuid::new_v4().to_string();
+        assert_eq!(0, event_store.load(id.as_str()).await.len());
+        let context = event_store.load_aggregate(id.as_str()).await;
+
+        event_store
+            .commit(
+                vec![
+                    TestEvent::Created(Created {
+                        id: "test_event_A".to_string(),
+                    }),
+                    TestEvent::Tested(Tested {
+                        test_name: "test A".to_string(),
+                    }),
+                ],
+                context,
+                new_test_metadata(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(2, event_store.load(id.as_str()).await.len());
+        let context = event_store.load_aggregate(id.as_str()).await;
+
+        event_store
+            .commit(
+                vec![TestEvent::Tested(Tested {
+                    test_name: "test B".to_string(),
+                })],
+                context,
+                new_test_metadata(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(3, event_store.load(id.as_str()).await.len());
+    }
+
+    #[tokio::test]
+    async fn event_repositories() {
+        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
+        let id = uuid::Uuid::new_v4().to_string();
+        let event_repo: PostgresEventRepository = PostgresEventRepository::new(pool.clone());
+        let events = event_repo.get_events::<TestAggregate>(&id).await.unwrap();
+        assert!(events.is_empty());
+
+        event_repo
+            .insert_events::<TestAggregate>(&[
+                test_event_envelope(&id, 1, TestEvent::Created(Created { id: id.clone() })),
+                test_event_envelope(
+                    &id,
+                    2,
+                    TestEvent::Tested(Tested {
+                        test_name: "a test was run".to_string(),
+                    }),
+                ),
+            ])
+            .await
+            .unwrap();
+        let events = event_repo.get_events::<TestAggregate>(&id).await.unwrap();
+        assert_eq!(2, events.len());
+        events.iter().for_each(|e| assert_eq!(&id, &e.aggregate_id));
+
+        // Optimistic lock error
+        let result = event_repo
+            .insert_events::<TestAggregate>(&[
+                test_event_envelope(
+                    &id,
+                    3,
+                    TestEvent::SomethingElse(SomethingElse {
+                        description: "this should not persist".to_string(),
+                    }),
+                ),
+                test_event_envelope(
+                    &id,
+                    2,
+                    TestEvent::SomethingElse(SomethingElse {
+                        description: "bad sequence number".to_string(),
+                    }),
+                ),
+            ])
+            .await
+            .unwrap_err();
+        match result {
+            PostgresAggregateError::OptimisticLock => {}
+            _ => panic!("invalid error result found during insert: {}", result),
+        };
+
+        let events = event_repo.get_events::<TestAggregate>(&id).await.unwrap();
+        assert_eq!(2, events.len());
+    }
+
+    #[tokio::test]
+    async fn snapshot_repositories() {
+        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
+        let id = uuid::Uuid::new_v4().to_string();
+        let repo: PostgresEventRepository = PostgresEventRepository::new(pool.clone());
+        let snapshot = repo.get_snapshot::<TestAggregate>(&id).await.unwrap();
+        assert_eq!(None, snapshot);
+
+        let test_description = "some test snapshot here".to_string();
+        let test_tests = vec!["testA".to_string(), "testB".to_string()];
+        repo.insert::<TestAggregate>(
+            serde_json::to_value(TestAggregate {
+                id: id.clone(),
+                description: test_description.clone(),
+                tests: test_tests.clone(),
+            })
+            .unwrap(),
+            id.clone(),
+            1,
+            &vec![],
+        )
+        .await
+        .unwrap();
+
+        let snapshot = repo.get_snapshot::<TestAggregate>(&id).await.unwrap();
+        assert_eq!(
+            Some(snapshot_context(
+                id.clone(),
+                0,
+                1,
+                serde_json::to_value(TestAggregate {
+                    id: id.clone(),
+                    description: test_description.clone(),
+                    tests: test_tests.clone(),
+                })
+                .unwrap()
+            )),
+            snapshot
+        );
+
+        // sequence iterated, does update
+        repo.update::<TestAggregate>(
+            serde_json::to_value(TestAggregate {
+                id: id.clone(),
+                description: "a test description that should be saved".to_string(),
+                tests: test_tests.clone(),
+            })
+            .unwrap(),
+            id.clone(),
+            2,
+            &vec![],
+        )
+        .await
+        .unwrap();
+
+        let snapshot = repo.get_snapshot::<TestAggregate>(&id).await.unwrap();
+        assert_eq!(
+            Some(snapshot_context(
+                id.clone(),
+                0,
+                2,
+                serde_json::to_value(TestAggregate {
+                    id: id.clone(),
+                    description: "a test description that should be saved".to_string(),
+                    tests: test_tests.clone(),
+                })
+                .unwrap()
+            )),
+            snapshot
+        );
+
+        // sequence out of order or not iterated, does not update
+        let result = repo
+            .update::<TestAggregate>(
+                serde_json::to_value(TestAggregate {
+                    id: id.clone(),
+                    description: "a test description that should not be saved".to_string(),
+                    tests: test_tests.clone(),
+                })
+                .unwrap(),
+                id.clone(),
+                2,
+                &vec![],
+            )
+            .await
+            .unwrap_err();
+        match result {
+            PostgresAggregateError::OptimisticLock => {}
+            _ => panic!("invalid error result found during insert: {}", result),
+        };
+
+        let snapshot = repo.get_snapshot::<TestAggregate>(&id).await.unwrap();
+        assert_eq!(
+            Some(snapshot_context(
+                id.clone(),
+                0,
+                2,
+                serde_json::to_value(TestAggregate {
+                    id: id.clone(),
+                    description: "a test description that should be saved".to_string(),
+                    tests: test_tests.clone(),
+                })
+                .unwrap()
+            )),
+            snapshot
+        );
     }
 }

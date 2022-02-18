@@ -41,3 +41,21 @@ where
     let store = PersistedSnapshotStore::new(repo);
     CqrsFramework::new(store, query_processor)
 }
+
+#[cfg(test)]
+mod test {
+    use crate::testing::tests::{
+        TestAggregate, TestQueryRepository, TestView, TEST_CONNECTION_STRING,
+    };
+    use crate::{default_postgress_pool, postgres_cqrs, PostgresViewRepository};
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn test_valid_cqrs_framework() {
+        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
+        let repo =
+            PostgresViewRepository::<TestView, TestAggregate>::new("test_query", pool.clone());
+        let query = TestQueryRepository::new(repo);
+        let _ps = postgres_cqrs(pool, vec![Arc::new(query)]);
+    }
+}
