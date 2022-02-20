@@ -94,4 +94,42 @@ where
 }
 
 #[cfg(test)]
-mod test {}
+mod test {
+    use crate::testing::tests::{
+        Created, TestAggregate, TestEvent, TestView, TEST_CONNECTION_STRING,
+    };
+    use crate::{default_postgress_pool, PostgresViewRepository};
+    use persist_es::{QueryContext, ViewRepository};
+
+    #[tokio::test]
+    async fn test_valid_view_repository() {
+        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
+        let repo =
+            PostgresViewRepository::<TestView, TestAggregate>::new("test_query", pool.clone());
+        let test_view_id = uuid::Uuid::new_v4().to_string();
+
+        let view = TestView {
+            events: vec![TestEvent::Created(Created {
+                id: "just a test event for this view".to_string(),
+            })],
+        };
+        repo.update_view(view.clone(), QueryContext::new(test_view_id.to_string(), 0))
+            .await
+            .unwrap();
+        let (found, context) = repo.load(&test_view_id).await.unwrap().unwrap();
+        assert_eq!(found, view);
+
+        let updated_view = TestView {
+            events: vec![TestEvent::Created(Created {
+                id: "a totally different view".to_string(),
+            })],
+        };
+        repo.update_view(updated_view.clone(), context)
+            .await
+            .unwrap();
+        let found_option = repo.load(&test_view_id).await.unwrap();
+        let found = found_option.unwrap().0;
+
+        assert_eq!(found, updated_view);
+    }
+}

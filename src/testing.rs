@@ -91,9 +91,9 @@ pub(crate) mod tests {
     pub(crate) type TestQueryRepository =
         GenericQuery<PostgresViewRepository<TestView, TestAggregate>, TestView, TestAggregate>;
 
-    #[derive(Debug, Default, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
     pub(crate) struct TestView {
-        events: Vec<TestEvent>,
+        pub(crate) events: Vec<TestEvent>,
     }
 
     impl View<TestAggregate> for TestView {
