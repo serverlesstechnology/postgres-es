@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 
+use cqrs_es::persist::PersistenceError;
 use cqrs_es::AggregateError;
-use persist_es::PersistenceError;
 use sqlx::Error;
 
 #[derive(Debug)]

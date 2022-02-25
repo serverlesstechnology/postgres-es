@@ -1,12 +1,13 @@
 #[cfg(test)]
 pub(crate) mod tests {
+    use async_trait::async_trait;
     use std::collections::HashMap;
 
-    use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, UserErrorPayload, View};
-    use persist_es::{
+    use cqrs_es::persist::{
         GenericQuery, PersistedEventStore, PersistedSnapshotStore, SerializedEvent,
         SerializedSnapshot,
     };
+    use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, UserErrorPayload, View};
     use serde::{Deserialize, Serialize};
     use serde_json::Value;
     use sqlx::{Pool, Postgres};
@@ -21,6 +22,7 @@ pub(crate) mod tests {
         pub(crate) tests: Vec<String>,
     }
 
+    #[async_trait]
     impl Aggregate for TestAggregate {
         type Command = TestCommand;
         type Event = TestEvent;
@@ -30,7 +32,7 @@ pub(crate) mod tests {
             "TestAggregate"
         }
 
-        fn handle(
+        async fn handle(
             &self,
             _command: Self::Command,
         ) -> Result<Vec<Self::Event>, AggregateError<Self::Error>> {

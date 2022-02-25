@@ -1,6 +1,6 @@
 use crate::PostgresEventRepository;
+use cqrs_es::persist::{PersistedEventStore, PersistedSnapshotStore};
 use cqrs_es::CqrsFramework;
-use persist_es::{PersistedEventStore, PersistedSnapshotStore};
 
 /// A convenience type for a CqrsFramework backed by
 /// [PostgresStore](struct.PostgresStore.html).
