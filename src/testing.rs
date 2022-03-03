@@ -4,8 +4,7 @@ pub(crate) mod tests {
     use std::collections::HashMap;
 
     use cqrs_es::persist::{
-        GenericQuery, PersistedEventStore, PersistedSnapshotStore, SerializedEvent,
-        SerializedSnapshot,
+        GenericQuery, PersistedEventStore, SerializedEvent, SerializedSnapshot, SourceOfTruth,
     };
     use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, UserErrorPayload, View};
     use serde::{Deserialize, Serialize};
@@ -114,11 +113,12 @@ pub(crate) mod tests {
         PersistedEventStore::<PostgresEventRepository, TestAggregate>::new(repo)
     }
 
-    pub(crate) async fn new_test_snapshot_store(
+    pub(crate) async fn new_test_aggregate_store(
         pool: Pool<Postgres>,
-    ) -> PersistedSnapshotStore<PostgresEventRepository, TestAggregate> {
+    ) -> PersistedEventStore<PostgresEventRepository, TestAggregate> {
         let repo = PostgresEventRepository::new(pool.clone());
-        PersistedSnapshotStore::<PostgresEventRepository, TestAggregate>::new(repo)
+        PersistedEventStore::<PostgresEventRepository, TestAggregate>::new(repo)
+            .with_storage_method(SourceOfTruth::AggregateStore)
     }
 
     pub(crate) fn new_test_metadata() -> HashMap<String, String> {

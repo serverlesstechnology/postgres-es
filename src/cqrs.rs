@@ -1,8 +1,8 @@
-use cqrs_es::persist::{PersistedEventStore, PersistedSnapshotStore};
+use cqrs_es::persist::{PersistedEventStore, SourceOfTruth};
 use cqrs_es::{Aggregate, CqrsFramework, Query};
 use std::sync::Arc;
 
-use crate::{PostgresCqrs, PostgresEventRepository, PostgresSnapshotCqrs};
+use crate::{PostgresCqrs, PostgresEventRepository};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres};
 
@@ -33,12 +33,27 @@ where
 pub fn postgres_snapshot_cqrs<A>(
     pool: Pool<Postgres>,
     query_processor: Vec<Arc<dyn Query<A>>>,
-) -> PostgresSnapshotCqrs<A>
+    snapshot_size: usize,
+) -> PostgresCqrs<A>
 where
     A: Aggregate,
 {
     let repo = PostgresEventRepository::new(pool);
-    let store = PersistedSnapshotStore::new(repo);
+    let store =
+        PersistedEventStore::new(repo).with_storage_method(SourceOfTruth::Snapshot(snapshot_size));
+    CqrsFramework::new(store, query_processor)
+}
+
+/// A convenience function for creating a CqrsFramework using an aggregate store.
+pub fn postgres_aggregate_cqrs<A>(
+    pool: Pool<Postgres>,
+    query_processor: Vec<Arc<dyn Query<A>>>,
+) -> PostgresCqrs<A>
+where
+    A: Aggregate,
+{
+    let repo = PostgresEventRepository::new(pool);
+    let store = PersistedEventStore::new(repo).with_storage_method(SourceOfTruth::AggregateStore);
     CqrsFramework::new(store, query_processor)
 }
 

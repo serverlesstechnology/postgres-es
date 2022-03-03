@@ -58,16 +58,12 @@ impl PersistedEventRepository for PostgresEventRepository {
         &self,
         aggregate_id: &str,
     ) -> Result<Option<SerializedSnapshot>, PersistenceError> {
-        let row: PgRow = match sqlx::query(&self.select_snapshot
-            // "SELECT aggregate_type, aggregate_id, last_sequence, current_snapshot, payload
-            //                         FROM snapshots
-            //                         WHERE aggregate_type = $1 AND aggregate_id = $2",
-        )
-        .bind(A::aggregate_type())
-        .bind(&aggregate_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(PostgresAggregateError::from)?
+        let row: PgRow = match sqlx::query(&self.select_snapshot)
+            .bind(A::aggregate_type())
+            .bind(&aggregate_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(PostgresAggregateError::from)?
         {
             Some(row) => row,
             None => {
@@ -297,7 +293,7 @@ impl PostgresEventRepository {
 mod test {
     use crate::error::PostgresAggregateError;
     use crate::testing::tests::{
-        new_test_event_store, new_test_metadata, new_test_snapshot_store, snapshot_context,
+        new_test_aggregate_store, new_test_event_store, new_test_metadata, snapshot_context,
         test_event_envelope, Created, SomethingElse, TestAggregate, TestEvent, Tested,
         TEST_CONNECTION_STRING,
     };
@@ -310,8 +306,8 @@ mod test {
         let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
         let event_store = new_test_event_store(pool).await;
         let id = uuid::Uuid::new_v4().to_string();
-        assert_eq!(0, event_store.load(id.as_str()).await.len());
-        let context = event_store.load_aggregate(id.as_str()).await;
+        assert_eq!(0, event_store.load_events(id.as_str()).await.unwrap().len());
+        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
 
         event_store
             .commit(
@@ -329,8 +325,8 @@ mod test {
             .await
             .unwrap();
 
-        assert_eq!(2, event_store.load(id.as_str()).await.len());
-        let context = event_store.load_aggregate(id.as_str()).await;
+        assert_eq!(2, event_store.load_events(id.as_str()).await.unwrap().len());
+        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
 
         event_store
             .commit(
@@ -342,16 +338,16 @@ mod test {
             )
             .await
             .unwrap();
-        assert_eq!(3, event_store.load(id.as_str()).await.len());
+        assert_eq!(3, event_store.load_events(id.as_str()).await.unwrap().len());
     }
 
     #[tokio::test]
     async fn commit_and_load_events_snapshot_store() {
         let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
-        let event_store = new_test_snapshot_store(pool).await;
+        let event_store = new_test_aggregate_store(pool).await;
         let id = uuid::Uuid::new_v4().to_string();
-        assert_eq!(0, event_store.load(id.as_str()).await.len());
-        let context = event_store.load_aggregate(id.as_str()).await;
+        assert_eq!(0, event_store.load_events(id.as_str()).await.unwrap().len());
+        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
 
         event_store
             .commit(
@@ -369,8 +365,8 @@ mod test {
             .await
             .unwrap();
 
-        assert_eq!(2, event_store.load(id.as_str()).await.len());
-        let context = event_store.load_aggregate(id.as_str()).await;
+        assert_eq!(2, event_store.load_events(id.as_str()).await.unwrap().len());
+        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
 
         event_store
             .commit(
@@ -382,7 +378,7 @@ mod test {
             )
             .await
             .unwrap();
-        assert_eq!(3, event_store.load(id.as_str()).await.len());
+        assert_eq!(3, event_store.load_events(id.as_str()).await.unwrap().len());
     }
 
     #[tokio::test]
