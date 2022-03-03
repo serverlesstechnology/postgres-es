@@ -41,7 +41,7 @@ impl PersistedEventRepository for PostgresEventRepository {
         number_events: usize,
     ) -> Result<Vec<SerializedEvent>, PersistenceError> {
         let query = format!(
-            "SELECT aggregate_type, aggregate_id, sequence, payload, metadata
+            "SELECT aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata
                                 FROM {}
                                 WHERE aggregate_type = $1 AND aggregate_id = $2
                                   AND sequence > (SELECT max(sequence)
