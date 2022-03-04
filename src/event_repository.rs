@@ -38,18 +38,15 @@ impl PersistedEventRepository for PostgresEventRepository {
     async fn get_last_events<A: Aggregate>(
         &self,
         aggregate_id: &str,
-        number_events: usize,
+        last_sequence: usize,
     ) -> Result<Vec<SerializedEvent>, PersistenceError> {
         let query = format!(
             "SELECT aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata
                                 FROM {}
                                 WHERE aggregate_type = $1 AND aggregate_id = $2
-                                  AND sequence > (SELECT max(sequence)
-                                                  FROM {}
-                                                  WHERE aggregate_type = $1
-                                                    AND aggregate_id = $2) - {}
+                                  AND sequence > {}
                                 ORDER BY sequence",
-            &self.event_table, &self.event_table, number_events
+            &self.event_table, last_sequence
         );
         self.select_events::<A>(aggregate_id, &query).await
     }
