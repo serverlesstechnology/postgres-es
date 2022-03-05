@@ -28,10 +28,10 @@ CREATE TABLE snapshots
 -- replace name with the value used in `GenericQueryRepository::new(query_name: String)`
 CREATE TABLE test_query
 (
-    query_instance_id text                        NOT NULL,
+    view_id text                        NOT NULL,
     version           bigint CHECK (version >= 0) NOT NULL,
     payload           json                        NOT NULL,
-    PRIMARY KEY (query_instance_id)
+    PRIMARY KEY (view_id)
 );
 
 CREATE USER test_user WITH ENCRYPTED PASSWORD 'test_pass';

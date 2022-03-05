@@ -27,15 +27,15 @@ where
     /// before using this query repository (see `/db/init.sql` sql initialization file).
     pub fn new(query_name: &str, pool: Pool<Postgres>) -> Self {
         let insert_sql = format!(
-            "INSERT INTO {} (payload, version, query_instance_id) VALUES ( $1, $2, $3 )",
+            "INSERT INTO {} (payload, version, view_id) VALUES ( $1, $2, $3 )",
             query_name
         );
         let update_sql = format!(
-            "UPDATE {} SET payload= $1 , version= $2 WHERE query_instance_id= $3",
+            "UPDATE {} SET payload= $1 , version= $2 WHERE view_id= $3",
             query_name
         );
         let select_sql = format!(
-            "SELECT version,payload FROM {} WHERE query_instance_id= $1",
+            "SELECT version,payload FROM {} WHERE view_id= $1",
             query_name
         );
         Self {
@@ -54,12 +54,9 @@ where
     V: View<A>,
     A: Aggregate,
 {
-    async fn load(
-        &self,
-        query_instance_id: &str,
-    ) -> Result<Option<(V, QueryContext)>, PersistenceError> {
+    async fn load(&self, view_id: &str) -> Result<Option<(V, QueryContext)>, PersistenceError> {
         let row: Option<PgRow> = sqlx::query(&self.select_sql)
-            .bind(&query_instance_id)
+            .bind(&view_id)
             .fetch_optional(&self.pool)
             .await
             .map_err(PostgresAggregateError::from)?;
@@ -69,7 +66,7 @@ where
                 let version = row.get("version");
                 let view = serde_json::from_value(row.get("payload"))
                     .map_err(PostgresAggregateError::from)?;
-                let view_context = QueryContext::new(query_instance_id.to_string(), version);
+                let view_context = QueryContext::new(view_id.to_string(), version);
                 Ok(Some((view, view_context)))
             }
         }

@@ -47,11 +47,13 @@ impl<T: std::error::Error> From<PostgresAggregateError> for AggregateError<T> {
     fn from(err: PostgresAggregateError) -> Self {
         match err {
             PostgresAggregateError::OptimisticLock => AggregateError::AggregateConflict,
-            PostgresAggregateError::ConnectionError(error) => AggregateError::TechnicalError(error),
-            PostgresAggregateError::DeserializationError(error) => {
-                AggregateError::TechnicalError(error)
+            PostgresAggregateError::ConnectionError(error) => {
+                AggregateError::DatabaseConnectionError(error)
             }
-            PostgresAggregateError::UnknownError(error) => AggregateError::TechnicalError(error),
+            PostgresAggregateError::DeserializationError(error) => {
+                AggregateError::DeserializationError(error)
+            }
+            PostgresAggregateError::UnknownError(error) => AggregateError::UnexpectedError(error),
         }
     }
 }
