@@ -1,18 +1,11 @@
 #[cfg(test)]
 pub(crate) mod tests {
+    use crate::PostgresViewRepository;
     use async_trait::async_trait;
-    use std::collections::HashMap;
-
-    use cqrs_es::persist::{
-        GenericQuery, PersistedEventStore, SerializedEvent, SerializedSnapshot, SourceOfTruth,
-    };
+    use cqrs_es::persist::{GenericQuery, SerializedEvent, SerializedSnapshot};
     use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, UserErrorPayload, View};
     use serde::{Deserialize, Serialize};
     use serde_json::Value;
-    use sqlx::{Pool, Postgres};
-
-    use crate::query_repository::PostgresViewRepository;
-    use crate::PostgresEventRepository;
 
     #[derive(Debug, Serialize, Deserialize, PartialEq)]
     pub(crate) struct TestAggregate {
@@ -105,28 +98,6 @@ pub(crate) mod tests {
 
     pub(crate) const TEST_CONNECTION_STRING: &str =
         "postgresql://test_user:test_pass@localhost:5432/test";
-
-    pub(crate) async fn new_test_event_store(
-        pool: Pool<Postgres>,
-    ) -> PersistedEventStore<PostgresEventRepository, TestAggregate> {
-        let repo = PostgresEventRepository::new(pool);
-        PersistedEventStore::<PostgresEventRepository, TestAggregate>::new(repo)
-    }
-
-    pub(crate) async fn new_test_aggregate_store(
-        pool: Pool<Postgres>,
-    ) -> PersistedEventStore<PostgresEventRepository, TestAggregate> {
-        let repo = PostgresEventRepository::new(pool.clone());
-        PersistedEventStore::<PostgresEventRepository, TestAggregate>::new(repo)
-            .with_storage_method(SourceOfTruth::AggregateStore)
-    }
-
-    pub(crate) fn new_test_metadata() -> HashMap<String, String> {
-        let now = "2021-03-18T12:32:45.930Z".to_string();
-        let mut metadata = HashMap::new();
-        metadata.insert("time".to_string(), now);
-        metadata
-    }
 
     pub(crate) fn test_event_envelope(
         id: &str,

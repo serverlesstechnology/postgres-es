@@ -34,5 +34,8 @@ CREATE TABLE test_query
     PRIMARY KEY (view_id)
 );
 
+INSERT INTO public.events (aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata, timestamp)
+    VALUES ('Customer', 'previous_event_in_need_of_upcast', 1, 'NameAdded', '1.0', '{"NameAdded": {}}', '{}', DEFAULT);
+
 CREATE USER test_user WITH ENCRYPTED PASSWORD 'test_pass';
 GRANT ALL PRIVILEGES ON DATABASE postgres TO test_user;
