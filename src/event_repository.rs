@@ -1,10 +1,9 @@
-use futures::TryStreamExt;
-
 use async_trait::async_trait;
 use cqrs_es::persist::{
     PersistedEventRepository, PersistenceError, SerializedEvent, SerializedSnapshot,
 };
 use cqrs_es::Aggregate;
+use futures::TryStreamExt;
 use serde_json::Value;
 use sqlx::postgres::PgRow;
 use sqlx::{Pool, Postgres, Row, Transaction};
@@ -288,95 +287,14 @@ impl PostgresEventRepository {
 
 #[cfg(test)]
 mod test {
+    use cqrs_es::persist::PersistedEventRepository;
+
     use crate::error::PostgresAggregateError;
     use crate::testing::tests::{
-        new_test_aggregate_store, new_test_event_store, new_test_metadata, snapshot_context,
-        test_event_envelope, Created, SomethingElse, TestAggregate, TestEvent, Tested,
-        TEST_CONNECTION_STRING,
+        snapshot_context, test_event_envelope, Created, SomethingElse, TestAggregate, TestEvent,
+        Tested, TEST_CONNECTION_STRING,
     };
     use crate::{default_postgress_pool, PostgresEventRepository};
-    use cqrs_es::persist::PersistedEventRepository;
-    use cqrs_es::EventStore;
-
-    #[tokio::test]
-    async fn commit_and_load_events() {
-        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
-        let event_store = new_test_event_store(pool).await;
-        let id = uuid::Uuid::new_v4().to_string();
-        assert_eq!(0, event_store.load_events(id.as_str()).await.unwrap().len());
-        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
-
-        event_store
-            .commit(
-                vec![
-                    TestEvent::Created(Created {
-                        id: "test_event_A".to_string(),
-                    }),
-                    TestEvent::Tested(Tested {
-                        test_name: "test A".to_string(),
-                    }),
-                ],
-                context,
-                new_test_metadata(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(2, event_store.load_events(id.as_str()).await.unwrap().len());
-        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
-
-        event_store
-            .commit(
-                vec![TestEvent::Tested(Tested {
-                    test_name: "test B".to_string(),
-                })],
-                context,
-                new_test_metadata(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(3, event_store.load_events(id.as_str()).await.unwrap().len());
-    }
-
-    #[tokio::test]
-    async fn commit_and_load_events_snapshot_store() {
-        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
-        let event_store = new_test_aggregate_store(pool).await;
-        let id = uuid::Uuid::new_v4().to_string();
-        assert_eq!(0, event_store.load_events(id.as_str()).await.unwrap().len());
-        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
-
-        event_store
-            .commit(
-                vec![
-                    TestEvent::Created(Created {
-                        id: "test_event_A".to_string(),
-                    }),
-                    TestEvent::Tested(Tested {
-                        test_name: "test A".to_string(),
-                    }),
-                ],
-                context,
-                new_test_metadata(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(2, event_store.load_events(id.as_str()).await.unwrap().len());
-        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
-
-        event_store
-            .commit(
-                vec![TestEvent::Tested(Tested {
-                    test_name: "test B".to_string(),
-                })],
-                context,
-                new_test_metadata(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(3, event_store.load_events(id.as_str()).await.unwrap().len());
-    }
 
     #[tokio::test]
     async fn event_repositories() {
@@ -538,5 +456,120 @@ mod test {
             )),
             snapshot
         );
+    }
+}
+
+#[cfg(test)]
+mod test_event_store {
+    use cqrs_es::persist::SemanticVersionEventUpcaster;
+    use cqrs_es::EventStore;
+    use serde_json::Value;
+
+    use crate::default_postgress_pool;
+    use crate::testing::tests::{
+        new_test_aggregate_store, new_test_event_store, new_test_metadata, Created, TestEvent,
+        Tested, TEST_CONNECTION_STRING,
+    };
+
+    #[tokio::test]
+    async fn commit_and_load_events() {
+        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
+        let event_store = new_test_event_store(pool).await;
+        let id = uuid::Uuid::new_v4().to_string();
+        assert_eq!(0, event_store.load_events(id.as_str()).await.unwrap().len());
+        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
+
+        event_store
+            .commit(
+                vec![
+                    TestEvent::Created(Created {
+                        id: "test_event_A".to_string(),
+                    }),
+                    TestEvent::Tested(Tested {
+                        test_name: "test A".to_string(),
+                    }),
+                ],
+                context,
+                new_test_metadata(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(2, event_store.load_events(id.as_str()).await.unwrap().len());
+        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
+
+        event_store
+            .commit(
+                vec![TestEvent::Tested(Tested {
+                    test_name: "test B".to_string(),
+                })],
+                context,
+                new_test_metadata(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(3, event_store.load_events(id.as_str()).await.unwrap().len());
+    }
+
+    #[tokio::test]
+    async fn commit_and_load_events_snapshot_store() {
+        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
+        let event_store = new_test_aggregate_store(pool).await;
+        let id = uuid::Uuid::new_v4().to_string();
+        assert_eq!(0, event_store.load_events(id.as_str()).await.unwrap().len());
+        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
+
+        event_store
+            .commit(
+                vec![
+                    TestEvent::Created(Created {
+                        id: "test_event_A".to_string(),
+                    }),
+                    TestEvent::Tested(Tested {
+                        test_name: "test A".to_string(),
+                    }),
+                ],
+                context,
+                new_test_metadata(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(2, event_store.load_events(id.as_str()).await.unwrap().len());
+        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
+
+        event_store
+            .commit(
+                vec![TestEvent::Tested(Tested {
+                    test_name: "test B".to_string(),
+                })],
+                context,
+                new_test_metadata(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(3, event_store.load_events(id.as_str()).await.unwrap().len());
+    }
+
+    #[tokio::test]
+    async fn upcasted_event() {
+        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
+        let upcaster = SemanticVersionEventUpcaster::new(
+            "SomethingElse",
+            "1.0.1",
+            Box::new(|mut event| match event.get_mut("Created").unwrap() {
+                Value::Object(object) => {
+                    object.insert("id".to_string(), Value::String("UNKNOWN".to_string()));
+                    event
+                }
+                _ => panic!("not the expected object"),
+            }),
+        );
+        let event_store = new_test_event_store(pool)
+            .await
+            .with_upcasters(vec![Box::new(upcaster)]);
+
+        let id = "previous_event_in_need_of_upcast".to_string();
+        event_store.load_aggregate(id.as_str()).await.unwrap();
     }
 }
