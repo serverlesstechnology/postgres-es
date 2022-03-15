@@ -1,5 +1,5 @@
 use cqrs_es::doc::{Customer, CustomerEvent};
-use cqrs_es::persist::{PersistedEventStore, SemanticVersionEventUpcaster, SourceOfTruth};
+use cqrs_es::persist::{PersistedEventStore, SemanticVersionEventUpcaster};
 use cqrs_es::EventStore;
 use postgres_es::{default_postgress_pool, PostgresEventRepository};
 use serde_json::Value;
@@ -11,14 +11,15 @@ async fn new_test_event_store(
     pool: Pool<Postgres>,
 ) -> PersistedEventStore<PostgresEventRepository, Customer> {
     let repo = PostgresEventRepository::new(pool);
-    PersistedEventStore::<PostgresEventRepository, Customer>::new(repo)
+    PersistedEventStore::<PostgresEventRepository, Customer>::new_event_store(repo)
 }
 
 #[tokio::test]
 async fn commit_and_load_events() {
     let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
     let repo = PostgresEventRepository::new(pool);
-    let event_store = PersistedEventStore::<PostgresEventRepository, Customer>::new(repo);
+    let event_store =
+        PersistedEventStore::<PostgresEventRepository, Customer>::new_event_store(repo);
 
     simple_es_commit_and_load_test(event_store).await;
 }
@@ -27,8 +28,8 @@ async fn commit_and_load_events() {
 async fn commit_and_load_events_snapshot_store() {
     let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
     let repo = PostgresEventRepository::new(pool);
-    let event_store = PersistedEventStore::<PostgresEventRepository, Customer>::new(repo)
-        .with_storage_method(SourceOfTruth::AggregateStore);
+    let event_store =
+        PersistedEventStore::<PostgresEventRepository, Customer>::new_aggregate_store(repo);
 
     simple_es_commit_and_load_test(event_store).await;
 }
