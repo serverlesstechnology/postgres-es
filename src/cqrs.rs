@@ -6,7 +6,18 @@ use crate::{PostgresCqrs, PostgresEventRepository};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres};
 
-/// A convenience building a simple connection pool for PostgresDb.
+/// A convenience method for building a simple connection pool for PostgresDb.
+/// A connection pool is needed for both the event and view repositories.
+///
+/// ```
+/// use sqlx::{Pool, Postgres};
+/// use postgres_es::default_postgress_pool;
+///
+/// # async fn configure_pool() {
+/// let connection_string = "postgresql://test_user:test_pass@localhost:5432/test";
+/// let pool: Pool<Postgres> = default_postgress_pool(connection_string).await;
+/// # }
+/// ```
 pub async fn default_postgress_pool(connection_string: &str) -> Pool<Postgres> {
     PgPoolOptions::new()
         .max_connections(10)

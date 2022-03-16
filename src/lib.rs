@@ -9,12 +9,12 @@
 pub use crate::cqrs::*;
 pub use crate::event_repository::*;
 pub use crate::event_repository::*;
-pub use crate::query_repository::*;
 pub use crate::types::*;
+pub use crate::view_repository::*;
 
 mod cqrs;
 mod error;
 mod event_repository;
-mod query_repository;
 mod testing;
 mod types;
+mod view_repository;

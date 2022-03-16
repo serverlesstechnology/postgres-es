@@ -23,20 +23,31 @@ where
     A: Aggregate,
 {
     /// Creates a new `PostgresViewRepository` that will store serialized views in a Postgres table named
-    /// identically to the `query_name` value provided. This table should be created by the user
+    /// identically to the `view_name` value provided. This table should be created by the user
     /// before using this query repository (see `/db/init.sql` sql initialization file).
-    pub fn new(query_name: &str, pool: Pool<Postgres>) -> Self {
+    ///
+    /// ```
+    /// # use cqrs_es::doc::MyAggregate;
+    /// # use cqrs_es::persist::doc::MyView;
+    /// use sqlx::{Pool, Postgres};
+    /// use postgres_es::PostgresViewRepository;
+    ///
+    /// fn configure_view_repo(pool: Pool<Postgres>) -> PostgresViewRepository<MyView,MyAggregate> {
+    ///     PostgresViewRepository::new("my_view_table", pool)
+    /// }
+    /// ```
+    pub fn new(view_name: &str, pool: Pool<Postgres>) -> Self {
         let insert_sql = format!(
             "INSERT INTO {} (payload, version, view_id) VALUES ( $1, $2, $3 )",
-            query_name
+            view_name
         );
         let update_sql = format!(
             "UPDATE {} SET payload= $1 , version= $2 WHERE view_id= $3",
-            query_name
+            view_name
         );
         let select_sql = format!(
             "SELECT version,payload FROM {} WHERE view_id= $1",
-            query_name
+            view_name
         );
         Self {
             insert_sql,

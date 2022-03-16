@@ -119,24 +119,34 @@ impl PostgresEventRepository {
     /// used for backing a `PersistedSnapshotStore`. This uses the default tables 'events'
     /// and 'snapshots'.
     ///
-    /// ```ignore
-    /// let store = PostgresEventRepository::<MyAggregate>::new(pool);
+    /// ```
+    /// use sqlx::{Pool, Postgres};
+    /// use postgres_es::PostgresEventRepository;
+    ///
+    /// fn configure_repo(pool: Pool<Postgres>) -> PostgresEventRepository {
+    ///     PostgresEventRepository::new(pool)
+    /// }
     /// ```
     pub fn new(pool: Pool<Postgres>) -> Self {
-        Self::new_with_tables(pool, DEFAULT_EVENT_TABLE, DEFAULT_SNAPSHOT_TABLE)
+        Self::use_tables(pool, DEFAULT_EVENT_TABLE, DEFAULT_SNAPSHOT_TABLE)
     }
 
-    /// Creates a new `PostgresEventRepository` from the provided database connection and table names.
-    /// Used for backing a `PersistedSnapshotStore`.
+    /// Configures a `PostgresEventRepository` to use the provided table names.
     ///
-    /// ```ignore
-    /// let store = PostgresEventRepository::<MyAggregate>::new_with_table_names(pool,"my_event_table","my_snapshot_table");
     /// ```
-    pub fn new_with_tables(
-        pool: Pool<Postgres>,
-        events_table: &str,
-        snapshots_table: &str,
-    ) -> Self {
+    /// use sqlx::{Pool, Postgres};
+    /// use postgres_es::PostgresEventRepository;
+    ///
+    /// fn configure_repo(pool: Pool<Postgres>) -> PostgresEventRepository {
+    ///     let store = PostgresEventRepository::new(pool);
+    ///     store.with_tables("my_event_table", "my_snapshot_table")
+    /// }
+    /// ```
+    pub fn with_tables(self, events_table: &str, snapshots_table: &str) -> Self {
+        Self::use_tables(self.pool, events_table, snapshots_table)
+    }
+
+    fn use_tables(pool: Pool<Postgres>, events_table: &str, snapshots_table: &str) -> Self {
         Self {
             pool,
             event_table: events_table.to_string(),
