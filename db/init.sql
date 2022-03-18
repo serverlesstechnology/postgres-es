@@ -24,18 +24,19 @@ CREATE TABLE snapshots
     PRIMARY KEY (aggregate_type, aggregate_id, last_sequence)
 );
 
--- one view table should be created for every `GenericQueryRepository` used
--- replace name with the value used in `GenericQueryRepository::new(query_name: String)`
-CREATE TABLE test_query
+-- one view table should be created for every `PostgresViewRepository` used
+-- replace name with the value used in `PostgresViewRepository::new(view_name: String)`
+CREATE TABLE test_view
 (
     view_id text                        NOT NULL,
-    version           bigint CHECK (version >= 0) NOT NULL,
-    payload           json                        NOT NULL,
+    version bigint CHECK (version >= 0) NOT NULL,
+    payload json                        NOT NULL,
     PRIMARY KEY (view_id)
 );
 
-INSERT INTO public.events (aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata, timestamp)
-    VALUES ('Customer', 'previous_event_in_need_of_upcast', 1, 'NameAdded', '1.0', '{"NameAdded": {}}', '{}', DEFAULT);
+INSERT INTO public.events (aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata,
+                           timestamp)
+VALUES ('Customer', 'previous_event_in_need_of_upcast', 1, 'NameAdded', '1.0', '{"NameAdded": {}}', '{}', DEFAULT);
 
 CREATE USER test_user WITH ENCRYPTED PASSWORD 'test_pass';
 GRANT ALL PRIVILEGES ON DATABASE postgres TO test_user;

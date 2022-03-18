@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use async_trait::async_trait;
-use cqrs_es::persist::{PersistenceError, QueryContext, ViewRepository};
+use cqrs_es::persist::{PersistenceError, ViewContext, ViewRepository};
 use cqrs_es::{Aggregate, View};
 use sqlx::postgres::PgRow;
 use sqlx::{Pool, Postgres, Row};
@@ -65,7 +65,25 @@ where
     V: View<A>,
     A: Aggregate,
 {
-    async fn load(&self, view_id: &str) -> Result<Option<(V, QueryContext)>, PersistenceError> {
+    async fn load(&self, view_id: &str) -> Result<Option<V>, PersistenceError> {
+        let row: Option<PgRow> = sqlx::query(&self.select_sql)
+            .bind(&view_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(PostgresAggregateError::from)?;
+        match row {
+            None => Ok(None),
+            Some(row) => {
+                let view = serde_json::from_value(row.get("payload"))?;
+                Ok(Some(view))
+            }
+        }
+    }
+
+    async fn load_with_context(
+        &self,
+        view_id: &str,
+    ) -> Result<Option<(V, ViewContext)>, PersistenceError> {
         let row: Option<PgRow> = sqlx::query(&self.select_sql)
             .bind(&view_id)
             .fetch_optional(&self.pool)
@@ -75,15 +93,14 @@ where
             None => Ok(None),
             Some(row) => {
                 let version = row.get("version");
-                let view = serde_json::from_value(row.get("payload"))
-                    .map_err(PostgresAggregateError::from)?;
-                let view_context = QueryContext::new(view_id.to_string(), version);
+                let view = serde_json::from_value(row.get("payload"))?;
+                let view_context = ViewContext::new(view_id.to_string(), version);
                 Ok(Some((view, view_context)))
             }
         }
     }
 
-    async fn update_view(&self, view: V, context: QueryContext) -> Result<(), PersistenceError> {
+    async fn update_view(&self, view: V, context: ViewContext) -> Result<(), PersistenceError> {
         let sql = match context.version {
             0 => &self.insert_sql,
             _ => &self.update_sql,
@@ -107,13 +124,13 @@ mod test {
         Created, TestAggregate, TestEvent, TestView, TEST_CONNECTION_STRING,
     };
     use crate::{default_postgress_pool, PostgresViewRepository};
-    use cqrs_es::persist::{QueryContext, ViewRepository};
+    use cqrs_es::persist::{ViewContext, ViewRepository};
 
     #[tokio::test]
     async fn test_valid_view_repository() {
         let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
         let repo =
-            PostgresViewRepository::<TestView, TestAggregate>::new("test_query", pool.clone());
+            PostgresViewRepository::<TestView, TestAggregate>::new("test_view", pool.clone());
         let test_view_id = uuid::Uuid::new_v4().to_string();
 
         let view = TestView {
@@ -121,10 +138,16 @@ mod test {
                 id: "just a test event for this view".to_string(),
             })],
         };
-        repo.update_view(view.clone(), QueryContext::new(test_view_id.to_string(), 0))
+        repo.update_view(view.clone(), ViewContext::new(test_view_id.to_string(), 0))
             .await
             .unwrap();
-        let (found, context) = repo.load(&test_view_id).await.unwrap().unwrap();
+        let (found, context) = repo
+            .load_with_context(&test_view_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(found, view);
+        let found = repo.load(&test_view_id).await.unwrap().unwrap();
         assert_eq!(found, view);
 
         let updated_view = TestView {
@@ -136,7 +159,7 @@ mod test {
             .await
             .unwrap();
         let found_option = repo.load(&test_view_id).await.unwrap();
-        let found = found_option.unwrap().0;
+        let found = found_option.unwrap();
 
         assert_eq!(found, updated_view);
     }
