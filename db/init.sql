@@ -8,7 +8,6 @@ CREATE TABLE events
     event_version  text                         NOT NULL,
     payload        json                         NOT NULL,
     metadata       json                         NOT NULL,
-    timestamp      timestamp with time zone DEFAULT (CURRENT_TIMESTAMP),
     PRIMARY KEY (aggregate_type, aggregate_id, sequence)
 );
 
@@ -20,7 +19,6 @@ CREATE TABLE snapshots
     last_sequence    bigint CHECK (last_sequence >= 0)    NOT NULL,
     current_snapshot bigint CHECK (current_snapshot >= 0) NOT NULL,
     payload          json                                 NOT NULL,
-    timestamp        timestamp with time zone DEFAULT (CURRENT_TIMESTAMP),
     PRIMARY KEY (aggregate_type, aggregate_id, last_sequence)
 );
 
@@ -34,9 +32,8 @@ CREATE TABLE test_view
     PRIMARY KEY (view_id)
 );
 
-INSERT INTO public.events (aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata,
-                           timestamp)
-VALUES ('Customer', 'previous_event_in_need_of_upcast', 1, 'NameAdded', '1.0', '{"NameAdded": {}}', '{}', DEFAULT);
+INSERT INTO public.events (aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata)
+VALUES ('Customer', 'previous_event_in_need_of_upcast', 1, 'NameAdded', '1.0', '{"NameAdded": {}}', '{}');
 
 CREATE USER test_user WITH ENCRYPTED PASSWORD 'test_pass';
 GRANT ALL PRIVILEGES ON DATABASE postgres TO test_user;
