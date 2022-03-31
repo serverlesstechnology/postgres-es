@@ -9,9 +9,8 @@ Add to your Cargo.toml file:
 
 ```toml
 [dependencies]
-cqrs-es = "0.2.5"
-persist-es = "0.2.5"
-postgres-es = "0.2.5"
+cqrs-es = "0.3.0"
+postgres-es = "0.3.0"
 ```
 
 Requires access to a Postgres DB with existing tables. See:
