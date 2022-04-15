@@ -1,6 +1,6 @@
 # postgres-es
 
-> A Postgres implementation of the `EventStore` trait in cqrs-es.
+> A Postgres implementation of the `PersistedEventRepository` trait in cqrs-es.
 
 ---
 
@@ -9,8 +9,8 @@ Add to your Cargo.toml file:
 
 ```toml
 [dependencies]
-cqrs-es = "0.3.0"
-postgres-es = "0.3.0"
+cqrs-es = "0.3.1"
+postgres-es = "0.3.1"
 ```
 
 Requires access to a Postgres DB with existing tables. See:
