@@ -3,9 +3,10 @@ pub(crate) mod tests {
     use crate::PostgresViewRepository;
     use async_trait::async_trait;
     use cqrs_es::persist::{GenericQuery, SerializedEvent, SerializedSnapshot};
-    use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, UserErrorPayload, View};
+    use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, View};
     use serde::{Deserialize, Serialize};
     use serde_json::Value;
+    use std::fmt::{Display, Formatter};
 
     #[derive(Debug, Serialize, Deserialize, PartialEq)]
     pub(crate) struct TestAggregate {
@@ -18,7 +19,7 @@ pub(crate) mod tests {
     impl Aggregate for TestAggregate {
         type Command = TestCommand;
         type Event = TestEvent;
-        type Error = UserErrorPayload;
+        type Error = TestError;
 
         fn aggregate_type() -> String {
             "TestAggregate".to_string()
@@ -79,6 +80,17 @@ pub(crate) mod tests {
             "1.0".to_string()
         }
     }
+
+    #[derive(Debug, PartialEq)]
+    pub(crate) struct TestError(String);
+
+    impl Display for TestError {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
+
+    impl std::error::Error for TestError {}
 
     pub(crate) enum TestCommand {}
 
