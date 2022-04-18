@@ -5,7 +5,7 @@ use postgres_es::{default_postgress_pool, PostgresEventRepository};
 use serde_json::Value;
 use sqlx::{Pool, Postgres};
 
-const TEST_CONNECTION_STRING: &str = "postgresql://test_user:test_pass@localhost:5432/test";
+const TEST_CONNECTION_STRING: &str = "postgresql://test_user:test_pass@127.0.0.1:5432/test";
 
 async fn new_test_event_store(
     pool: Pool<Postgres>,
