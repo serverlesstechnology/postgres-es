@@ -30,13 +30,14 @@ pub async fn default_postgress_pool(connection_string: &str) -> Pool<Postgres> {
 pub fn postgres_cqrs<A>(
     pool: Pool<Postgres>,
     query_processor: Vec<Box<dyn Query<A>>>,
+    services: A::Services,
 ) -> PostgresCqrs<A>
 where
     A: Aggregate,
 {
     let repo = PostgresEventRepository::new(pool);
     let store = PersistedEventStore::new_event_store(repo);
-    CqrsFramework::new(store, query_processor)
+    CqrsFramework::new(store, query_processor, services)
 }
 
 /// A convenience function for creating a CqrsFramework using a snapshot store.
@@ -44,32 +45,34 @@ pub fn postgres_snapshot_cqrs<A>(
     pool: Pool<Postgres>,
     query_processor: Vec<Box<dyn Query<A>>>,
     snapshot_size: usize,
+    services: A::Services,
 ) -> PostgresCqrs<A>
 where
     A: Aggregate,
 {
     let repo = PostgresEventRepository::new(pool);
     let store = PersistedEventStore::new_snapshot_store(repo, snapshot_size);
-    CqrsFramework::new(store, query_processor)
+    CqrsFramework::new(store, query_processor, services)
 }
 
 /// A convenience function for creating a CqrsFramework using an aggregate store.
 pub fn postgres_aggregate_cqrs<A>(
     pool: Pool<Postgres>,
     query_processor: Vec<Box<dyn Query<A>>>,
+    services: A::Services,
 ) -> PostgresCqrs<A>
 where
     A: Aggregate,
 {
     let repo = PostgresEventRepository::new(pool);
     let store = PersistedEventStore::new_aggregate_store(repo);
-    CqrsFramework::new(store, query_processor)
+    CqrsFramework::new(store, query_processor, services)
 }
 
 #[cfg(test)]
 mod test {
     use crate::testing::tests::{
-        TestAggregate, TestQueryRepository, TestView, TEST_CONNECTION_STRING,
+        TestAggregate, TestQueryRepository, TestServices, TestView, TEST_CONNECTION_STRING,
     };
     use crate::{default_postgress_pool, postgres_cqrs, PostgresViewRepository};
     use std::sync::Arc;
@@ -80,6 +83,6 @@ mod test {
         let repo =
             PostgresViewRepository::<TestView, TestAggregate>::new("test_view", pool.clone());
         let query = TestQueryRepository::new(Arc::new(repo));
-        let _ps = postgres_cqrs(pool, vec![Box::new(query)]);
+        let _ps = postgres_cqrs(pool, vec![Box::new(query)], TestServices);
     }
 }
