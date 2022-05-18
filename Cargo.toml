@@ -1,6 +1,6 @@
 [package]
 name = "postgres-es"
-version = "0.4.0"
+version = "0.4.2"
 authors = ["Dave Garred <dave.garred@serverlesstechnology.com>"]
 edition = "2021"
 license = "Apache-2.0"
@@ -11,7 +11,7 @@ documentation = "https://docs.rs/postgres-es"
 readme = "README.md"
 
 [dependencies]
-cqrs-es = "0.4.0"
+cqrs-es = "0.4.2"
 
 async-trait = "0.1.53"
 futures = "0.3.21"
