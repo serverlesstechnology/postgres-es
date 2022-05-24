@@ -1,27 +1,32 @@
 use async_trait::async_trait;
 use cqrs_es::persist::{
-    PersistedEventRepository, PersistenceError, SerializedEvent, SerializedSnapshot,
+    PersistedEventRepository, PersistenceError, ReplayStream, SerializedEvent, SerializedSnapshot,
 };
 use cqrs_es::Aggregate;
 use futures::TryStreamExt;
 use serde_json::Value;
 use sqlx::postgres::PgRow;
 use sqlx::{Pool, Postgres, Row, Transaction};
+use tokio::sync::mpsc::Receiver;
 
 use crate::error::PostgresAggregateError;
 
 const DEFAULT_EVENT_TABLE: &str = "events";
 const DEFAULT_SNAPSHOT_TABLE: &str = "snapshots";
 
-/// A snapshot backed event repository for use in backing a `PersistedSnapshotStore`.
+const DEFAULT_STREAMING_CHANNEL_SIZE: usize = 200;
+
+/// An event repository relying on a Postgres database for persistence.
 pub struct PostgresEventRepository {
     pool: Pool<Postgres>,
     event_table: String,
     insert_event: String,
     select_events: String,
+    all_events: String,
     insert_snapshot: String,
     update_snapshot: String,
     select_snapshot: String,
+    stream_channel_size: usize,
 }
 
 #[async_trait]
@@ -90,6 +95,54 @@ impl PersistedEventRepository for PostgresEventRepository {
         };
         Ok(())
     }
+
+    async fn stream_events<A: Aggregate>(
+        &self,
+        aggregate_id: &str,
+    ) -> Result<ReplayStream, PersistenceError> {
+        let queue = stream_events(
+            self.select_events.clone(),
+            A::aggregate_type(),
+            aggregate_id.to_string(),
+            self.pool.clone(),
+            self.stream_channel_size,
+        );
+        Ok(ReplayStream::new(queue))
+    }
+
+    // TODO: aggregate id is unused here, `stream_events` function needs to be broken up
+    async fn stream_all_events<A: Aggregate>(&self) -> Result<ReplayStream, PersistenceError> {
+        let queue = stream_events(
+            self.all_events.clone(),
+            A::aggregate_type(),
+            "".to_string(),
+            self.pool.clone(),
+            self.stream_channel_size,
+        );
+        Ok(ReplayStream::new(queue))
+    }
+}
+
+fn stream_events(
+    query: String,
+    aggregate_type: String,
+    aggregate_id: String,
+    pool: Pool<Postgres>,
+    channel_size: usize,
+) -> Receiver<Result<SerializedEvent, PersistenceError>> {
+    let (tx, queue) = tokio::sync::mpsc::channel(channel_size);
+    tokio::spawn(async move {
+        let query = sqlx::query(&query)
+            .bind(&aggregate_type)
+            .bind(&aggregate_id);
+        let mut rows = query.fetch(&pool);
+        while let Some(row) = rows.try_next().await.unwrap() {
+            let event_result: Result<SerializedEvent, PersistenceError> =
+                PostgresEventRepository::deser_event(row).map_err(Into::into);
+            tx.send(event_result).await.unwrap();
+        }
+    });
+    queue
 }
 
 impl PostgresEventRepository {
@@ -108,16 +161,15 @@ impl PostgresEventRepository {
             .await
             .map_err(PostgresAggregateError::from)?
         {
-            result.push(self.deser_event(row)?);
+            result.push(PostgresEventRepository::deser_event(row)?);
         }
         Ok(result)
     }
 }
 
 impl PostgresEventRepository {
-    /// Creates a new `PostgresEventRepository` from the provided database connection
-    /// used for backing a `PersistedSnapshotStore`. This uses the default tables 'events'
-    /// and 'snapshots'.
+    /// Creates a new `PostgresEventRepository` from the provided database connection.
+    /// This uses the default tables 'events' and 'snapshots'.
     ///
     /// ```
     /// use sqlx::{Pool, Postgres};
@@ -129,6 +181,31 @@ impl PostgresEventRepository {
     /// ```
     pub fn new(pool: Pool<Postgres>) -> Self {
         Self::use_tables(pool, DEFAULT_EVENT_TABLE, DEFAULT_SNAPSHOT_TABLE)
+    }
+
+    /// Configures a `PostgresEventRepository` to use a streaming queue of the provided size.
+    ///
+    /// ```
+    /// use sqlx::{Pool, Postgres};
+    /// use postgres_es::PostgresEventRepository;
+    ///
+    /// fn configure_repo(pool: Pool<Postgres>) -> PostgresEventRepository {
+    ///     let store = PostgresEventRepository::new(pool);
+    ///     store.with_streaming_channel_size(1000)
+    /// }
+    /// ```
+    pub fn with_streaming_channel_size(self, stream_channel_size: usize) -> Self {
+        Self {
+            pool: self.pool,
+            event_table: self.event_table,
+            insert_event: self.insert_event,
+            select_events: self.select_events,
+            all_events: self.all_events,
+            insert_snapshot: self.insert_snapshot,
+            update_snapshot: self.update_snapshot,
+            select_snapshot: self.select_snapshot,
+            stream_channel_size,
+        }
     }
 
     /// Configures a `PostgresEventRepository` to use the provided table names.
@@ -156,6 +233,10 @@ impl PostgresEventRepository {
                                         FROM {}
                                         WHERE aggregate_type = $1 
                                           AND aggregate_id = $2 ORDER BY sequence", events_table),
+            all_events: format!("SELECT aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata
+                                        FROM {}
+                                        WHERE aggregate_type = $1 
+                                        ORDER BY sequence", events_table),
             insert_snapshot: format!("INSERT INTO {} (aggregate_type, aggregate_id, last_sequence, current_snapshot, payload)
                                        VALUES ($1, $2, $3, $4, $5)", snapshots_table),
             update_snapshot: format!("UPDATE {}
@@ -164,6 +245,7 @@ impl PostgresEventRepository {
             select_snapshot: format!("SELECT aggregate_type, aggregate_id, last_sequence, current_snapshot, payload
                                         FROM {}
                                         WHERE aggregate_type = $1 AND aggregate_id = $2", snapshots_table),
+            stream_channel_size: DEFAULT_STREAMING_CHANNEL_SIZE,
         }
     }
 
@@ -230,7 +312,7 @@ impl PostgresEventRepository {
         }
     }
 
-    fn deser_event(&self, row: PgRow) -> Result<SerializedEvent, PostgresAggregateError> {
+    fn deser_event(row: PgRow) -> Result<SerializedEvent, PostgresAggregateError> {
         let aggregate_type: String = row.get("aggregate_type");
         let aggregate_id: String = row.get("aggregate_id");
         let sequence = {
@@ -310,7 +392,8 @@ mod test {
     async fn event_repositories() {
         let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
         let id = uuid::Uuid::new_v4().to_string();
-        let event_repo: PostgresEventRepository = PostgresEventRepository::new(pool.clone());
+        let event_repo: PostgresEventRepository =
+            PostgresEventRepository::new(pool.clone()).with_streaming_channel_size(1);
         let events = event_repo.get_events::<TestAggregate>(&id).await.unwrap();
         assert!(events.is_empty());
 
@@ -358,6 +441,26 @@ mod test {
 
         let events = event_repo.get_events::<TestAggregate>(&id).await.unwrap();
         assert_eq!(2, events.len());
+
+        let mut stream = event_repo
+            .stream_events::<TestAggregate>(&id)
+            .await
+            .unwrap();
+        let mut found_in_stream = 0;
+        while let Some(_) = stream.next::<TestAggregate>().await {
+            found_in_stream += 1;
+        }
+        assert_eq!(found_in_stream, 2);
+
+        let mut stream = event_repo
+            .stream_all_events::<TestAggregate>()
+            .await
+            .unwrap();
+        let mut found_in_stream = 0;
+        while let Some(_) = stream.next::<TestAggregate>().await {
+            found_in_stream += 1;
+        }
+        assert!(found_in_stream >= 2);
     }
 
     #[tokio::test]
