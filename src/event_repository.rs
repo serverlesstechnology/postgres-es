@@ -7,7 +7,6 @@ use futures::TryStreamExt;
 use serde_json::Value;
 use sqlx::postgres::PgRow;
 use sqlx::{Pool, Postgres, Row, Transaction};
-use tokio::sync::mpsc::Receiver;
 
 use crate::error::PostgresAggregateError;
 
@@ -100,26 +99,24 @@ impl PersistedEventRepository for PostgresEventRepository {
         &self,
         aggregate_id: &str,
     ) -> Result<ReplayStream, PersistenceError> {
-        let queue = stream_events(
+        Ok(stream_events(
             self.select_events.clone(),
             A::aggregate_type(),
             aggregate_id.to_string(),
             self.pool.clone(),
             self.stream_channel_size,
-        );
-        Ok(ReplayStream::new(queue))
+        ))
     }
 
     // TODO: aggregate id is unused here, `stream_events` function needs to be broken up
     async fn stream_all_events<A: Aggregate>(&self) -> Result<ReplayStream, PersistenceError> {
-        let queue = stream_events(
+        Ok(stream_events(
             self.all_events.clone(),
             A::aggregate_type(),
             "".to_string(),
             self.pool.clone(),
             self.stream_channel_size,
-        );
-        Ok(ReplayStream::new(queue))
+        ))
     }
 }
 
@@ -129,8 +126,8 @@ fn stream_events(
     aggregate_id: String,
     pool: Pool<Postgres>,
     channel_size: usize,
-) -> Receiver<Result<SerializedEvent, PersistenceError>> {
-    let (tx, queue) = tokio::sync::mpsc::channel(channel_size);
+) -> ReplayStream {
+    let (mut feed, stream) = ReplayStream::new(channel_size);
     tokio::spawn(async move {
         let query = sqlx::query(&query)
             .bind(&aggregate_type)
@@ -139,10 +136,13 @@ fn stream_events(
         while let Some(row) = rows.try_next().await.unwrap() {
             let event_result: Result<SerializedEvent, PersistenceError> =
                 PostgresEventRepository::deser_event(row).map_err(Into::into);
-            tx.send(event_result).await.unwrap();
+            if feed.push(event_result).await.is_err() {
+                // TODO: in the unlikely event of a broken channel this error should be reported.
+                break;
+            };
         }
     });
-    queue
+    stream
 }
 
 impl PostgresEventRepository {
@@ -442,6 +442,120 @@ mod test {
         let events = event_repo.get_events::<TestAggregate>(&id).await.unwrap();
         assert_eq!(2, events.len());
 
+        verify_replay_stream(&id, event_repo).await;
+    }
+
+    #[tokio::test]
+    async fn snapshot_repositories() {
+        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
+        let id = uuid::Uuid::new_v4().to_string();
+        let event_repo: PostgresEventRepository = PostgresEventRepository::new(pool.clone());
+        let snapshot = event_repo.get_snapshot::<TestAggregate>(&id).await.unwrap();
+        assert_eq!(None, snapshot);
+
+        let test_description = "some test snapshot here".to_string();
+        let test_tests = vec!["testA".to_string(), "testB".to_string()];
+        event_repo
+            .insert::<TestAggregate>(
+                serde_json::to_value(TestAggregate {
+                    id: id.clone(),
+                    description: test_description.clone(),
+                    tests: test_tests.clone(),
+                })
+                .unwrap(),
+                id.clone(),
+                1,
+                &vec![],
+            )
+            .await
+            .unwrap();
+
+        let snapshot = event_repo.get_snapshot::<TestAggregate>(&id).await.unwrap();
+        assert_eq!(
+            Some(snapshot_context(
+                id.clone(),
+                0,
+                1,
+                serde_json::to_value(TestAggregate {
+                    id: id.clone(),
+                    description: test_description.clone(),
+                    tests: test_tests.clone(),
+                })
+                .unwrap()
+            )),
+            snapshot
+        );
+
+        // sequence iterated, does update
+        event_repo
+            .update::<TestAggregate>(
+                serde_json::to_value(TestAggregate {
+                    id: id.clone(),
+                    description: "a test description that should be saved".to_string(),
+                    tests: test_tests.clone(),
+                })
+                .unwrap(),
+                id.clone(),
+                2,
+                &vec![],
+            )
+            .await
+            .unwrap();
+
+        let snapshot = event_repo.get_snapshot::<TestAggregate>(&id).await.unwrap();
+        assert_eq!(
+            Some(snapshot_context(
+                id.clone(),
+                0,
+                2,
+                serde_json::to_value(TestAggregate {
+                    id: id.clone(),
+                    description: "a test description that should be saved".to_string(),
+                    tests: test_tests.clone(),
+                })
+                .unwrap()
+            )),
+            snapshot
+        );
+
+        // sequence out of order or not iterated, does not update
+        let result = event_repo
+            .update::<TestAggregate>(
+                serde_json::to_value(TestAggregate {
+                    id: id.clone(),
+                    description: "a test description that should not be saved".to_string(),
+                    tests: test_tests.clone(),
+                })
+                .unwrap(),
+                id.clone(),
+                2,
+                &vec![],
+            )
+            .await
+            .unwrap_err();
+        match result {
+            PostgresAggregateError::OptimisticLock => {}
+            _ => panic!("invalid error result found during insert: {}", result),
+        };
+
+        let snapshot = event_repo.get_snapshot::<TestAggregate>(&id).await.unwrap();
+        assert_eq!(
+            Some(snapshot_context(
+                id.clone(),
+                0,
+                2,
+                serde_json::to_value(TestAggregate {
+                    id: id.clone(),
+                    description: "a test description that should be saved".to_string(),
+                    tests: test_tests.clone(),
+                })
+                .unwrap()
+            )),
+            snapshot
+        );
+    }
+
+    async fn verify_replay_stream(id: &str, event_repo: PostgresEventRepository) {
         let mut stream = event_repo
             .stream_events::<TestAggregate>(&id)
             .await
@@ -461,113 +575,5 @@ mod test {
             found_in_stream += 1;
         }
         assert!(found_in_stream >= 2);
-    }
-
-    #[tokio::test]
-    async fn snapshot_repositories() {
-        let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
-        let id = uuid::Uuid::new_v4().to_string();
-        let repo: PostgresEventRepository = PostgresEventRepository::new(pool.clone());
-        let snapshot = repo.get_snapshot::<TestAggregate>(&id).await.unwrap();
-        assert_eq!(None, snapshot);
-
-        let test_description = "some test snapshot here".to_string();
-        let test_tests = vec!["testA".to_string(), "testB".to_string()];
-        repo.insert::<TestAggregate>(
-            serde_json::to_value(TestAggregate {
-                id: id.clone(),
-                description: test_description.clone(),
-                tests: test_tests.clone(),
-            })
-            .unwrap(),
-            id.clone(),
-            1,
-            &vec![],
-        )
-        .await
-        .unwrap();
-
-        let snapshot = repo.get_snapshot::<TestAggregate>(&id).await.unwrap();
-        assert_eq!(
-            Some(snapshot_context(
-                id.clone(),
-                0,
-                1,
-                serde_json::to_value(TestAggregate {
-                    id: id.clone(),
-                    description: test_description.clone(),
-                    tests: test_tests.clone(),
-                })
-                .unwrap()
-            )),
-            snapshot
-        );
-
-        // sequence iterated, does update
-        repo.update::<TestAggregate>(
-            serde_json::to_value(TestAggregate {
-                id: id.clone(),
-                description: "a test description that should be saved".to_string(),
-                tests: test_tests.clone(),
-            })
-            .unwrap(),
-            id.clone(),
-            2,
-            &vec![],
-        )
-        .await
-        .unwrap();
-
-        let snapshot = repo.get_snapshot::<TestAggregate>(&id).await.unwrap();
-        assert_eq!(
-            Some(snapshot_context(
-                id.clone(),
-                0,
-                2,
-                serde_json::to_value(TestAggregate {
-                    id: id.clone(),
-                    description: "a test description that should be saved".to_string(),
-                    tests: test_tests.clone(),
-                })
-                .unwrap()
-            )),
-            snapshot
-        );
-
-        // sequence out of order or not iterated, does not update
-        let result = repo
-            .update::<TestAggregate>(
-                serde_json::to_value(TestAggregate {
-                    id: id.clone(),
-                    description: "a test description that should not be saved".to_string(),
-                    tests: test_tests.clone(),
-                })
-                .unwrap(),
-                id.clone(),
-                2,
-                &vec![],
-            )
-            .await
-            .unwrap_err();
-        match result {
-            PostgresAggregateError::OptimisticLock => {}
-            _ => panic!("invalid error result found during insert: {}", result),
-        };
-
-        let snapshot = repo.get_snapshot::<TestAggregate>(&id).await.unwrap();
-        assert_eq!(
-            Some(snapshot_context(
-                id.clone(),
-                0,
-                2,
-                serde_json::to_value(TestAggregate {
-                    id: id.clone(),
-                    description: "a test description that should be saved".to_string(),
-                    tests: test_tests.clone(),
-                })
-                .unwrap()
-            )),
-            snapshot
-        );
     }
 }
