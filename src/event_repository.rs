@@ -138,7 +138,7 @@ fn stream_events(
                 PostgresEventRepository::deser_event(row).map_err(Into::into);
             if feed.push(event_result).await.is_err() {
                 // TODO: in the unlikely event of a broken channel this error should be reported.
-                break;
+                return;
             };
         }
     });
@@ -185,6 +185,7 @@ impl PostgresEventRepository {
 
     /// Configures a `PostgresEventRepository` to use a streaming queue of the provided size.
     ///
+    /// _Example: configure the repository to stream with a 1000 event buffer._
     /// ```
     /// use sqlx::{Pool, Postgres};
     /// use postgres_es::PostgresEventRepository;
@@ -210,6 +211,8 @@ impl PostgresEventRepository {
 
     /// Configures a `PostgresEventRepository` to use the provided table names.
     ///
+    /// _Example: configure the repository to use "my_event_table" and "my_snapshot_table"
+    /// for the event and snapshot table names._
     /// ```
     /// use sqlx::{Pool, Postgres};
     /// use postgres_es::PostgresEventRepository;
@@ -445,6 +448,28 @@ mod test {
         verify_replay_stream(&id, event_repo).await;
     }
 
+    async fn verify_replay_stream(id: &str, event_repo: PostgresEventRepository) {
+        let mut stream = event_repo
+            .stream_events::<TestAggregate>(&id)
+            .await
+            .unwrap();
+        let mut found_in_stream = 0;
+        while let Some(_) = stream.next::<TestAggregate>().await {
+            found_in_stream += 1;
+        }
+        assert_eq!(found_in_stream, 2);
+
+        let mut stream = event_repo
+            .stream_all_events::<TestAggregate>()
+            .await
+            .unwrap();
+        let mut found_in_stream = 0;
+        while let Some(_) = stream.next::<TestAggregate>().await {
+            found_in_stream += 1;
+        }
+        assert!(found_in_stream >= 2);
+    }
+
     #[tokio::test]
     async fn snapshot_repositories() {
         let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
@@ -553,27 +578,5 @@ mod test {
             )),
             snapshot
         );
-    }
-
-    async fn verify_replay_stream(id: &str, event_repo: PostgresEventRepository) {
-        let mut stream = event_repo
-            .stream_events::<TestAggregate>(&id)
-            .await
-            .unwrap();
-        let mut found_in_stream = 0;
-        while let Some(_) = stream.next::<TestAggregate>().await {
-            found_in_stream += 1;
-        }
-        assert_eq!(found_in_stream, 2);
-
-        let mut stream = event_repo
-            .stream_all_events::<TestAggregate>()
-            .await
-            .unwrap();
-        let mut found_in_stream = 0;
-        while let Some(_) = stream.next::<TestAggregate>().await {
-            found_in_stream += 1;
-        }
-        assert!(found_in_stream >= 2);
     }
 }
