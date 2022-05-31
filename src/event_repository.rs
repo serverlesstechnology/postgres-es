@@ -9,6 +9,7 @@ use sqlx::postgres::PgRow;
 use sqlx::{Pool, Postgres, Row, Transaction};
 
 use crate::error::PostgresAggregateError;
+use crate::sql_query::SqlQueryFactory;
 
 const DEFAULT_EVENT_TABLE: &str = "events";
 const DEFAULT_SNAPSHOT_TABLE: &str = "snapshots";
@@ -18,13 +19,7 @@ const DEFAULT_STREAMING_CHANNEL_SIZE: usize = 200;
 /// An event repository relying on a Postgres database for persistence.
 pub struct PostgresEventRepository {
     pool: Pool<Postgres>,
-    event_table: String,
-    insert_event: String,
-    select_events: String,
-    all_events: String,
-    insert_snapshot: String,
-    update_snapshot: String,
-    select_snapshot: String,
+    query_factory: SqlQueryFactory,
     stream_channel_size: usize,
 }
 
@@ -34,7 +29,7 @@ impl PersistedEventRepository for PostgresEventRepository {
         &self,
         aggregate_id: &str,
     ) -> Result<Vec<SerializedEvent>, PersistenceError> {
-        self.select_events::<A>(aggregate_id, &self.select_events)
+        self.select_events::<A>(aggregate_id, self.query_factory.select_events())
             .await
     }
 
@@ -43,14 +38,7 @@ impl PersistedEventRepository for PostgresEventRepository {
         aggregate_id: &str,
         last_sequence: usize,
     ) -> Result<Vec<SerializedEvent>, PersistenceError> {
-        let query = format!(
-            "SELECT aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata
-                                FROM {}
-                                WHERE aggregate_type = $1 AND aggregate_id = $2
-                                  AND sequence > {}
-                                ORDER BY sequence",
-            &self.event_table, last_sequence
-        );
+        let query = self.query_factory.get_last_events(last_sequence);
         self.select_events::<A>(aggregate_id, &query).await
     }
 
@@ -58,7 +46,7 @@ impl PersistedEventRepository for PostgresEventRepository {
         &self,
         aggregate_id: &str,
     ) -> Result<Option<SerializedSnapshot>, PersistenceError> {
-        let row: PgRow = match sqlx::query(&self.select_snapshot)
+        let row: PgRow = match sqlx::query(self.query_factory.select_snapshot())
             .bind(A::aggregate_type())
             .bind(&aggregate_id)
             .fetch_optional(&self.pool)
@@ -100,7 +88,7 @@ impl PersistedEventRepository for PostgresEventRepository {
         aggregate_id: &str,
     ) -> Result<ReplayStream, PersistenceError> {
         Ok(stream_events(
-            self.select_events.clone(),
+            self.query_factory.select_events().to_string(),
             A::aggregate_type(),
             aggregate_id.to_string(),
             self.pool.clone(),
@@ -111,7 +99,7 @@ impl PersistedEventRepository for PostgresEventRepository {
     // TODO: aggregate id is unused here, `stream_events` function needs to be broken up
     async fn stream_all_events<A: Aggregate>(&self) -> Result<ReplayStream, PersistenceError> {
         Ok(stream_events(
-            self.all_events.clone(),
+            self.query_factory.all_events().to_string(),
             A::aggregate_type(),
             "".to_string(),
             self.pool.clone(),
@@ -198,13 +186,7 @@ impl PostgresEventRepository {
     pub fn with_streaming_channel_size(self, stream_channel_size: usize) -> Self {
         Self {
             pool: self.pool,
-            event_table: self.event_table,
-            insert_event: self.insert_event,
-            select_events: self.select_events,
-            all_events: self.all_events,
-            insert_snapshot: self.insert_snapshot,
-            update_snapshot: self.update_snapshot,
-            select_snapshot: self.select_snapshot,
+            query_factory: self.query_factory,
             stream_channel_size,
         }
     }
@@ -229,25 +211,7 @@ impl PostgresEventRepository {
     fn use_tables(pool: Pool<Postgres>, events_table: &str, snapshots_table: &str) -> Self {
         Self {
             pool,
-            event_table: events_table.to_string(),
-            insert_event: format!("INSERT INTO {} (aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata)
-                                       VALUES ($1, $2, $3, $4, $5, $6, $7)", events_table),
-            select_events: format!("SELECT aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata
-                                        FROM {}
-                                        WHERE aggregate_type = $1 
-                                          AND aggregate_id = $2 ORDER BY sequence", events_table),
-            all_events: format!("SELECT aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata
-                                        FROM {}
-                                        WHERE aggregate_type = $1 
-                                        ORDER BY sequence", events_table),
-            insert_snapshot: format!("INSERT INTO {} (aggregate_type, aggregate_id, last_sequence, current_snapshot, payload)
-                                       VALUES ($1, $2, $3, $4, $5)", snapshots_table),
-            update_snapshot: format!("UPDATE {}
-                                           SET last_sequence= $3 , payload= $6, current_snapshot= $4
-                                           WHERE aggregate_type= $1 AND aggregate_id= $2 AND current_snapshot= $5", snapshots_table),
-            select_snapshot: format!("SELECT aggregate_type, aggregate_id, last_sequence, current_snapshot, payload
-                                        FROM {}
-                                        WHERE aggregate_type = $1 AND aggregate_id = $2", snapshots_table),
+            query_factory: SqlQueryFactory::new(events_table, snapshots_table),
             stream_channel_size: DEFAULT_STREAMING_CHANNEL_SIZE,
         }
     }
@@ -257,7 +221,7 @@ impl PostgresEventRepository {
         events: &[SerializedEvent],
     ) -> Result<(), PostgresAggregateError> {
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
-        self.persist_events::<A>(&self.insert_event, &mut tx, events)
+        self.persist_events::<A>(self.query_factory.insert_event(), &mut tx, events)
             .await?;
         tx.commit().await?;
         Ok(())
@@ -272,9 +236,9 @@ impl PostgresEventRepository {
     ) -> Result<(), PostgresAggregateError> {
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
         let current_sequence = self
-            .persist_events::<A>(&self.insert_event, &mut tx, events)
+            .persist_events::<A>(self.query_factory.insert_event(), &mut tx, events)
             .await?;
-        sqlx::query(&self.insert_snapshot)
+        sqlx::query(self.query_factory.insert_snapshot())
             .bind(A::aggregate_type())
             .bind(aggregate_id.as_str())
             .bind(current_sequence as u32)
@@ -295,11 +259,11 @@ impl PostgresEventRepository {
     ) -> Result<(), PostgresAggregateError> {
         let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
         let current_sequence = self
-            .persist_events::<A>(&self.insert_event, &mut tx, events)
+            .persist_events::<A>(self.query_factory.insert_event(), &mut tx, events)
             .await?;
 
         let aggregate_payload = serde_json::to_value(&aggregate)?;
-        let result = sqlx::query(&self.update_snapshot)
+        let result = sqlx::query(self.query_factory.update_snapshot())
             .bind(A::aggregate_type())
             .bind(aggregate_id.as_str())
             .bind(current_sequence as u32)

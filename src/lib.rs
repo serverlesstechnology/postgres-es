@@ -15,6 +15,7 @@ pub use crate::view_repository::*;
 mod cqrs;
 mod error;
 mod event_repository;
+pub(crate) mod sql_query;
 mod testing;
 mod types;
 mod view_repository;
