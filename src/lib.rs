@@ -4,7 +4,7 @@
 // #![warn(clippy::pedantic)]
 //! # postgres-es
 //!
-//! > A Postgres implementation of the `EventStore` trait in [cqrs-es](https://crates.io/crates/persist-es).
+//! > A Postgres implementation of the `EventStore` trait in [cqrs-es](https://crates.io/crates/cqrs-es).
 //!
 pub use crate::cqrs::*;
 pub use crate::event_repository::*;
