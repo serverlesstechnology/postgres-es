@@ -21,5 +21,5 @@ sqlx = { version = "0.6", features = [ "postgres" , "runtime-tokio-rustls", "jso
 tokio = { version = "1", features = ["rt"] }
 
 [dev-dependencies]
-uuid = { version = "1.1", features = ["v4"]}
+uuid = { version = "1.3", features = ["v4"]}
 
