@@ -244,7 +244,7 @@ impl PostgresEventRepository {
             .bind(current_sequence as i32)
             .bind(current_snapshot as i32)
             .bind(&aggregate_payload)
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await?;
         tx.commit().await?;
         Ok(())
@@ -270,7 +270,7 @@ impl PostgresEventRepository {
             .bind(current_snapshot as i32)
             .bind((current_snapshot - 1) as i32)
             .bind(&aggregate_payload)
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await?;
         tx.commit().await?;
         match result.rows_affected() {
@@ -337,7 +337,7 @@ impl PostgresEventRepository {
                 .bind(event_version)
                 .bind(&payload)
                 .bind(&metadata)
-                .execute(&mut *tx)
+                .execute(&mut **tx)
                 .await?;
         }
         Ok(current_sequence)
