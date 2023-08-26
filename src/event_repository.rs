@@ -48,7 +48,7 @@ impl PersistedEventRepository for PostgresEventRepository {
     ) -> Result<Option<SerializedSnapshot>, PersistenceError> {
         let row: PgRow = match sqlx::query(self.query_factory.select_snapshot())
             .bind(A::aggregate_type())
-            .bind(&aggregate_id)
+            .bind(aggregate_id)
             .fetch_optional(&self.pool)
             .await
             .map_err(PostgresAggregateError::from)?
@@ -220,7 +220,7 @@ impl PostgresEventRepository {
         &self,
         events: &[SerializedEvent],
     ) -> Result<(), PostgresAggregateError> {
-        let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
+        let mut tx: Transaction<'_, Postgres> = sqlx::Acquire::begin(&self.pool).await?;
         self.persist_events::<A>(self.query_factory.insert_event(), &mut tx, events)
             .await?;
         tx.commit().await?;
@@ -234,7 +234,7 @@ impl PostgresEventRepository {
         current_snapshot: usize,
         events: &[SerializedEvent],
     ) -> Result<(), PostgresAggregateError> {
-        let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
+        let mut tx: Transaction<'_, Postgres> = sqlx::Acquire::begin(&self.pool).await?;
         let current_sequence = self
             .persist_events::<A>(self.query_factory.insert_event(), &mut tx, events)
             .await?;
@@ -257,7 +257,7 @@ impl PostgresEventRepository {
         current_snapshot: usize,
         events: &[SerializedEvent],
     ) -> Result<(), PostgresAggregateError> {
-        let mut tx: Transaction<Postgres> = sqlx::Acquire::begin(&self.pool).await?;
+        let mut tx: Transaction<'_, Postgres> = sqlx::Acquire::begin(&self.pool).await?;
         let current_sequence = self
             .persist_events::<A>(self.query_factory.insert_event(), &mut tx, events)
             .await?;

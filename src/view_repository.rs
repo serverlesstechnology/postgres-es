@@ -67,7 +67,7 @@ where
 {
     async fn load(&self, view_id: &str) -> Result<Option<V>, PersistenceError> {
         let row: Option<PgRow> = sqlx::query(&self.select_sql)
-            .bind(&view_id)
+            .bind(view_id)
             .fetch_optional(&self.pool)
             .await
             .map_err(PostgresAggregateError::from)?;
@@ -85,7 +85,7 @@ where
         view_id: &str,
     ) -> Result<Option<(V, ViewContext)>, PersistenceError> {
         let row: Option<PgRow> = sqlx::query(&self.select_sql)
-            .bind(&view_id)
+            .bind(view_id)
             .fetch_optional(&self.pool)
             .await
             .map_err(PostgresAggregateError::from)?;
@@ -109,7 +109,7 @@ where
         let payload = serde_json::to_value(&view).map_err(PostgresAggregateError::from)?;
         sqlx::query(sql.as_str())
             .bind(payload)
-            .bind(&version)
+            .bind(version)
             .bind(context.view_instance_id)
             .execute(&self.pool)
             .await

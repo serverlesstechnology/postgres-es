@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(clippy::all)]
-// #![warn(clippy::pedantic)]
+#![warn(rust_2018_idioms)]
 //! # postgres-es
 //!
 //! > A Postgres implementation of the `EventStore` trait in [cqrs-es](https://crates.io/crates/cqrs-es).
