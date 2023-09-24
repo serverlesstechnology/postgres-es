@@ -1,5 +1,5 @@
 use cqrs_es::doc::{Customer, CustomerEvent};
-use cqrs_es::persist::{PersistedEventStore, SemanticVersionEventUpcaster};
+use cqrs_es::persist::{MpscReplayStream, PersistedEventStore, SemanticVersionEventUpcaster};
 use cqrs_es::EventStore;
 use postgres_es::{default_postgress_pool, PostgresEventRepository};
 use serde_json::Value;
@@ -9,9 +9,11 @@ const TEST_CONNECTION_STRING: &str = "postgresql://test_user:test_pass@127.0.0.1
 
 async fn new_test_event_store(
     pool: Pool<Postgres>,
-) -> PersistedEventStore<PostgresEventRepository, Customer> {
+) -> PersistedEventStore<PostgresEventRepository, Customer, MpscReplayStream> {
     let repo = PostgresEventRepository::new(pool);
-    PersistedEventStore::<PostgresEventRepository, Customer>::new_event_store(repo)
+    PersistedEventStore::<PostgresEventRepository, Customer, MpscReplayStream>::new_event_store(
+        repo,
+    )
 }
 
 #[tokio::test]
@@ -19,7 +21,9 @@ async fn commit_and_load_events() {
     let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
     let repo = PostgresEventRepository::new(pool);
     let event_store =
-        PersistedEventStore::<PostgresEventRepository, Customer>::new_event_store(repo);
+        PersistedEventStore::<PostgresEventRepository, Customer, MpscReplayStream>::new_event_store(
+            repo,
+        );
 
     simple_es_commit_and_load_test(event_store).await;
 }
@@ -29,13 +33,13 @@ async fn commit_and_load_events_snapshot_store() {
     let pool = default_postgress_pool(TEST_CONNECTION_STRING).await;
     let repo = PostgresEventRepository::new(pool);
     let event_store =
-        PersistedEventStore::<PostgresEventRepository, Customer>::new_aggregate_store(repo);
+        PersistedEventStore::<PostgresEventRepository, Customer, MpscReplayStream>::new_aggregate_store(repo);
 
     simple_es_commit_and_load_test(event_store).await;
 }
 
 async fn simple_es_commit_and_load_test(
-    event_store: PersistedEventStore<PostgresEventRepository, Customer>,
+    event_store: PersistedEventStore<PostgresEventRepository, Customer, MpscReplayStream>,
 ) {
     let id = uuid::Uuid::new_v4().to_string();
     assert_eq!(0, event_store.load_events(id.as_str()).await.unwrap().len());

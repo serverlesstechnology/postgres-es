@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use cqrs_es::persist::{
-    PersistedEventRepository, PersistenceError, ReplayStream, SerializedEvent, SerializedSnapshot,
+    MpscReplayStream, PersistedEventRepository, PersistenceError, SerializedEvent,
+    SerializedSnapshot,
 };
 use cqrs_es::Aggregate;
 use futures::TryStreamExt;
@@ -24,7 +25,7 @@ pub struct PostgresEventRepository {
 }
 
 #[async_trait]
-impl PersistedEventRepository for PostgresEventRepository {
+impl PersistedEventRepository<MpscReplayStream> for PostgresEventRepository {
     async fn get_events<A: Aggregate>(
         &self,
         aggregate_id: &str,
@@ -86,7 +87,7 @@ impl PersistedEventRepository for PostgresEventRepository {
     async fn stream_events<A: Aggregate>(
         &self,
         aggregate_id: &str,
-    ) -> Result<ReplayStream, PersistenceError> {
+    ) -> Result<MpscReplayStream, PersistenceError> {
         Ok(stream_events(
             self.query_factory.select_events().to_string(),
             A::aggregate_type(),
@@ -97,7 +98,7 @@ impl PersistedEventRepository for PostgresEventRepository {
     }
 
     // TODO: aggregate id is unused here, `stream_events` function needs to be broken up
-    async fn stream_all_events<A: Aggregate>(&self) -> Result<ReplayStream, PersistenceError> {
+    async fn stream_all_events<A: Aggregate>(&self) -> Result<MpscReplayStream, PersistenceError> {
         Ok(stream_events(
             self.query_factory.all_events().to_string(),
             A::aggregate_type(),
@@ -114,8 +115,8 @@ fn stream_events(
     aggregate_id: String,
     pool: Pool<Postgres>,
     channel_size: usize,
-) -> ReplayStream {
-    let (mut feed, stream) = ReplayStream::new(channel_size);
+) -> MpscReplayStream {
+    let (mut feed, stream) = MpscReplayStream::new(channel_size);
     tokio::spawn(async move {
         let query = sqlx::query(&query)
             .bind(&aggregate_type)
@@ -354,6 +355,7 @@ mod test {
         Tested, TEST_CONNECTION_STRING,
     };
     use crate::{default_postgress_pool, PostgresEventRepository};
+    use cqrs_es::persist::ReplayStream;
 
     #[tokio::test]
     async fn event_repositories() {

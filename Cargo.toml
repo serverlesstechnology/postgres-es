@@ -11,7 +11,8 @@ documentation = "https://docs.rs/postgres-es"
 readme = "README.md"
 
 [dependencies]
-cqrs-es = "0.4.10"
+cqrs-es = {path = "../cqrs", version = "0.4.10"}
+#cqrs-es = "0.4.10"
 
 async-trait = "0.1"
 futures = "0.3"
