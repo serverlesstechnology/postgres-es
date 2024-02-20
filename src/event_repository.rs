@@ -418,7 +418,7 @@ mod test {
             .await
             .unwrap();
         let mut found_in_stream = 0;
-        while let Some(_) = stream.next::<TestAggregate>().await {
+        while let Some(_) = stream.next::<TestAggregate>(&None).await {
             found_in_stream += 1;
         }
         assert_eq!(found_in_stream, 2);
@@ -428,7 +428,7 @@ mod test {
             .await
             .unwrap();
         let mut found_in_stream = 0;
-        while let Some(_) = stream.next::<TestAggregate>().await {
+        while let Some(_) = stream.next::<TestAggregate>(&None).await {
             found_in_stream += 1;
         }
         assert!(found_in_stream >= 2);
